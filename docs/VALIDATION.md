@@ -5,13 +5,14 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 ## Completed checks
 
 - Production dependency installation and editable installation with development dependencies.
-- **43 passed, 6 skipped** using the full pytest suite with `ELOVISION_BROWSER_URL` and system Chromium configured. The six skips are explicitly the real-model tests.
+- **45 passed, 6 skipped** using the full pytest suite with `ELOVISION_BROWSER_URL` and system Chromium configured. The six skips are explicitly the real-model tests.
 - Chess tests: opening, middlegame and endgame legal moves; both colors; castling, en passant, all promotions; checkmate and stalemate; PGN mainline navigation; variations; multi-game and custom-FEN imports; malformed PGNs and invalid/mismatched histories.
 - Policy tests: legal-set completeness, nonfinite/negative/unnormalized outputs rejected, linked versus independent rating passage, all 14 groups, rating bounds, history/model-sensitive caching, LRU capacity and defensive copies.
 - Official adapter tests: exact upstream history tensors, legal-mask/softmax parity, black-side move mirroring and promotion indices. Logits in these tests are deterministic **test fixtures**, not Maia predictions.
 - HTTP tests: independent and linked rating endpoints, missing-weight errors, local-origin/host restrictions, bundled assets, and full-precision CSV/JSON equality with computed policies. Policy values in these isolated API tests come from an explicitly injected test double.
 - Browser tests: upload the actual Opera Game PGN, synchronize board and notation, arrow-key/ply navigation, preserve the position when changing Elo, flip orientation, checkmate display, invalid FEN feedback, responsive widths 1024 and 390; comparison sorting, 14-column spectrum, chart selection, download interaction and debounced latest-rating results. Rendering tests route explicit test policies; the production app has no fake-policy mode.
 - Ruff checks/formatting, Python bytecode compilation, JavaScript syntax, and local server startup.
+- Standalone-preview regression: production styling and JavaScript, SVG pieces and actual sample-game states are embedded in one HTML file. In a sandboxed iframe with all network requests blocked, the board renders, pieces load, sample navigation and rating changes work, and no uncaught JavaScript errors or external requests occur. No model probabilities are embedded.
 
 ## Blocked / unverified
 

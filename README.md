@@ -4,6 +4,18 @@ Explore how human chess choices change with playing strength. Import a PGN, move
 
 **Validation status:** the Python backend, official Maia tokenizer/vocabulary adapter, PGN navigation, exports, and browser interactions have been tested on Linux with CPU PyTorch. Official model metadata and the AGPLv3 model card were retrieved, but the cloud proxy blocks the weight CDN. Real-model loading/inference, model benchmarks, and Windows execution have **not** been verified. The app reports missing weights and never supplies fabricated probabilities. See [validation](docs/VALIDATION.md) for exact checks and remaining acceptance steps.
 
+## Preview the interface
+
+The delivery ZIP includes **`preview.html`**, a self-contained page with its styles,
+piece graphics and the real sample-game positions embedded. It works in an isolated
+HTML visualization without a Python server or network access. Sample-game navigation,
+board flipping and rating controls work; PGN imports, custom FENs and neural analysis
+require the locally running app. No probabilities are simulated in the preview.
+
+Do not open `elovision/static/index.html` directly in a chat visualization: that is the
+server's entry point and depends on separate assets and the Python API. Developers can
+regenerate the standalone preview with `python scripts/build_preview.py`.
+
 ## Run on Windows 11
 
 1. Install **64-bit Python 3.12** from [python.org](https://www.python.org/downloads/windows/), including the Python launcher.

@@ -1,6 +1,9 @@
 const $ = (id) => document.getElementById(id);
 const RATINGS = Array.from({ length: 14 }, (_, i) => 400 + i * 200);
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+// Set only by the standalone preview builder; contains real board states, never policy data.
+const preview = globalThis.ELOVISION_PREVIEW || null;
+const localUrl = (path) => new URL(path, document.baseURI).href;
 const state = {
   games: [],
   game: null,
@@ -34,8 +37,23 @@ function alert(message = "") {
   $("alert").hidden = !message;
 }
 async function api(path, data, signal) {
+  if (preview) {
+    if (path === "health") return { loaded: false, installed: false };
+    if (path === "position") {
+      const position = preview.sample.games[0].positions.find(
+        (p) => p.fen === data.fen,
+      );
+      if (position) return structuredClone(position);
+    }
+    if (path === "pgn" && data.pgn === preview.pgn)
+      return structuredClone(preview.sample);
+    throw new Error(
+      "This standalone preview supports the sample game and board navigation. " +
+        "Run start.bat in the installed ELO Vision app for PGN imports and real Maia analysis.",
+    );
+  }
   const response = await fetch(
-    `/api/v1/${path}`,
+    localUrl(`api/v1/${path}`),
     data === undefined
       ? { signal }
       : {
@@ -90,7 +108,10 @@ function renderBoard() {
       if (piece) {
         const img = node("img", "piece");
         const color = piece === piece.toUpperCase() ? "w" : "b";
-        img.src = `/pieces/${color}${piece.toUpperCase()}.svg`;
+        const pieceId = `${color}${piece.toUpperCase()}`;
+        img.src = preview
+          ? preview.pieces[pieceId]
+          : localUrl(`pieces/${pieceId}.svg`);
         const names = {
           p: "pawn",
           n: "knight",
@@ -266,12 +287,20 @@ async function analyze(revision) {
     const empty = node("div", "empty-state");
     empty.append(
       node("span", "empty-symbol", "✦"),
-      node("h3", "", "Analysis is unavailable."),
+      node(
+        "h3",
+        "",
+        preview
+          ? "Analysis runs in the local app."
+          : "Analysis is unavailable.",
+      ),
       node("p", "", error.message),
     );
     $("results").replaceChildren(empty);
-    $("analysis-indicator").textContent = "UNAVAILABLE";
-    $("model-status").textContent = "Model needs attention";
+    $("analysis-indicator").textContent = preview ? "PREVIEW" : "UNAVAILABLE";
+    $("model-status").textContent = preview
+      ? "Interface preview · No backend"
+      : "Model needs attention";
   } finally {
     if (revision === state.revision) $("loading").hidden = true;
   }
@@ -568,7 +597,7 @@ async function exportResults(format) {
   const button = $("export-" + format);
   button.disabled = true;
   try {
-    const response = await fetch("/api/v1/export", {
+    const response = await fetch(localUrl("api/v1/export"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -680,7 +709,11 @@ $("pgn-file").addEventListener("change", async (event) => {
 });
 $("sample").addEventListener("click", async () => {
   try {
-    await importPgn(await (await fetch("/example.pgn")).text());
+    await importPgn(
+      preview
+        ? preview.pgn
+        : await (await fetch(localUrl("example.pgn"))).text(),
+    );
   } catch (error) {
     alert(error.message);
   }
@@ -726,6 +759,19 @@ $("fen-form").addEventListener("submit", async (event) => {
 });
 $("export-json").addEventListener("click", () => exportResults("json"));
 $("export-csv").addEventListener("click", () => exportResults("csv"));
+if (preview) {
+  $("import").disabled = true;
+  $("import").title =
+    "PGN file imports require the locally running Python app.";
+  $("fen-open").disabled = true;
+  $("fen-open").title =
+    "Custom FEN validation requires the locally running Python app.";
+  document.querySelector(".local-badge").textContent = "Standalone preview";
+  document.querySelector(".brand").addEventListener("click", (event) => {
+    event.preventDefault();
+    navigate(0);
+  });
+}
 try {
   const [health, position] = await Promise.all([
     api("health"),
