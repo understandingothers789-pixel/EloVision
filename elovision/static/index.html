@@ -42,6 +42,7 @@
       </div>
       <div id="alert" class="alert" role="alert" hidden></div>
       <div class="workspace">
+        <div class="board-column">
         <section class="board-panel" aria-label="Chess position">
           <div class="section-line">
             <span class="section-title">THE POSITION</span
@@ -64,6 +65,7 @@
               role="img"
               aria-label="Chessboard, starting position"
             ></div>
+            <svg id="move-arrows" class="move-arrows" viewBox="0 0 8 8" aria-hidden="true"></svg>
           </div>
           <div class="player-strip bottom-player">
             <span class="avatar light" id="bottom-avatar">W</span>
@@ -138,10 +140,14 @@
             <span id="game-count" class="count">PGN</span>
           </div>
           <div class="game-select-wrap">
-            <label for="game-select" class="sr-only">Select game</label
+            <label for="game-select" class="sr-only">Select imported game</label
             ><select id="game-select" disabled>
               <option>No game imported</option>
             </select>
+          </div>
+          <div class="sample-select-wrap">
+            <label for="sample-game-select">Sample library</label>
+            <select id="sample-game-select"><option>Loading sample games…</option></select>
           </div>
           <div id="game-meta" class="game-meta">
             <span class="eyebrow">YOUR NEXT DISCOVERY</span>
@@ -165,6 +171,7 @@
             ><span id="game-result">Mainline navigation · Standard chess</span>
           </div>
         </section>
+        </div>
         <section
           class="analysis-panel panel"
           aria-label="Human move predictions"
@@ -174,31 +181,10 @@
             <span id="analysis-indicator" class="live-label">MAIA 3</span>
           </div>
           <div class="tabs" role="tablist" aria-label="Analysis mode">
-            <button
-              class="tab active"
-              role="tab"
-              aria-selected="true"
-              id="tab-explore"
-              data-mode="explore"
-            >
-              Explore</button
-            ><button
-              class="tab"
-              role="tab"
-              aria-selected="false"
-              id="tab-compare"
-              data-mode="compare"
-            >
-              Compare</button
-            ><button
-              class="tab"
-              role="tab"
-              aria-selected="false"
-              id="tab-spectrum"
-              data-mode="spectrum"
-            >
-              Spectrum
-            </button>
+            <button class="tab active" role="tab" aria-selected="true" id="tab-triple" data-mode="triple">Ratings</button>
+            <button class="tab" role="tab" aria-selected="false" id="tab-explore" data-mode="explore">Explore</button>
+            <button class="tab" role="tab" aria-selected="false" id="tab-compare" data-mode="compare">Compare</button>
+            <button class="tab" role="tab" aria-selected="false" id="tab-spectrum" data-mode="spectrum">Spectrum</button>
           </div>
           <div class="rating-control">
             <div class="rating-heading">
@@ -216,7 +202,7 @@
               type="range"
               min="400"
               max="3000"
-              step="200"
+              step="100"
               value="1600"
             />
             <div class="range-labels">
@@ -227,6 +213,29 @@
               <span aria-hidden="true">↔</span> Equal-rated opponents
               <strong id="matchup">1600 vs. 1600</strong>
             </div>
+          </div>
+          <div id="triple-controls" class="triple-controls">
+            <div class="rating-generation">
+              <label for="rating-count">Number of ratings <output id="rating-count-value">3</output></label>
+              <input id="rating-count" type="range" min="1" max="8" step="1" value="3" />
+              <label for="rating-spacing">Generated spacing</label>
+              <div class="spacing-controls">
+                <select id="rating-spacing">
+                  <option value="100">100 Elo</option>
+                  <option value="200">200 Elo</option>
+                  <option value="400" selected>400 Elo</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <input id="custom-spacing" type="number" min="100" max="2600" step="100" value="400" aria-label="Custom average spacing in Elo" hidden />
+              </div>
+              <small id="spacing-note">Centered on 1800; edit any Elo below.</small>
+            </div>
+            <div id="triple-ratings" class="triple-ratings"></div>
+            <details class="matchup-menu">
+              <summary>Opponent rating settings</summary>
+              <label class="matchup-toggle"><input id="equal-opponents" type="checkbox" checked /> Opponent matches player rating</label>
+              <div id="opponent-inputs" class="triple-ratings opponent-ratings" hidden></div>
+            </details>
           </div>
           <div id="compare-controls" class="compare-controls" hidden>
             <label>Rating A<select id="rating-a"></select></label><span>→</span
@@ -250,7 +259,6 @@
               ><span class="sr-only">Number of moves</span
               ><select id="move-limit">
                 <option value="5">Top 5</option>
-                <option value="10">Top 10</option>
                 <option value="all">All moves</option>
               </select></label
             >
@@ -295,6 +303,12 @@
               These are model predictions of human choices, not measured
               frequencies or engine evaluations. The most likely move is not
               necessarily the strongest.
+            </p>
+            <p>
+              Maia’s 79-million-parameter model scores all legal moves in a
+              single neural-network pass; it does not search chess variations.
+              The model stays loaded during the session, and repeated positions
+              with the same history and ratings use a local result cache.
             </p>
             <p>
               The official code accepts ratings 0–5000. Its API does not

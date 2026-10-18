@@ -6,6 +6,8 @@ const preview = globalThis.ELOVISION_PREVIEW || null;
 const localUrl = (path) => new URL(path, document.baseURI).href;
 const state = {
   games: [],
+  ratingValues: [1400, 1800, 2200],
+  opponentValues: [1400, 1800, 2200],
   game: null,
   ply: 0,
   position: null,
@@ -39,14 +41,17 @@ function alert(message = "") {
 async function api(path, data, signal) {
   if (preview) {
     if (path === "health") return { loaded: false, installed: false };
+    if (path === "samples") return preview.samples.map(({ metadata }) => metadata);
     if (path === "position") {
-      const position = preview.sample.games[0].positions.find(
-        (p) => p.fen === data.fen,
-      );
-      if (position) return structuredClone(position);
+      for (const sample of preview.samples) {
+        const position = sample.parsed.games[0].positions.find((p) => p.fen === data.fen);
+        if (position) return structuredClone(position);
+      }
     }
-    if (path === "pgn" && data.pgn === preview.pgn)
-      return structuredClone(preview.sample);
+    if (path === "pgn") {
+      const sample = preview.samples.find((entry) => entry.metadata.pgn === data.pgn);
+      if (sample) return structuredClone(sample.parsed);
+    }
     throw new Error(
       "This standalone preview supports the sample game and board navigation. " +
         "Run start.bat in the installed ELO Vision app for PGN imports and real Maia analysis.",
@@ -83,7 +88,23 @@ function selectedRatings() {
   if (state.mode === "spectrum") return RATINGS;
   if (state.mode === "compare")
     return [Number($("rating-a").value), Number($("rating-b").value)];
+  if (state.mode === "triple") return state.ratingValues;
   return [Number($("elo").value)];
+}
+function selectedMatchups() {
+  if (state.mode !== "triple") return undefined;
+  const equal = $("equal-opponents").checked;
+  return state.ratingValues.map((rating, i) => ({
+    player_elo: rating,
+    opponent_elo: equal ? rating : state.opponentValues[i],
+  }));
+}
+function analysisRequest() {
+  const request = { ...payload() };
+  const matchups = selectedMatchups();
+  if (matchups) request.matchups = matchups;
+  else request.ratings = selectedRatings();
+  return request;
 }
 function renderBoard() {
   const pos = state.position;
@@ -164,6 +185,8 @@ function renderBoard() {
   document
     .querySelector(".move-button.selected")
     ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (state.mode === "triple" && state.predictions.length)
+    renderMoveArrows(state.predictions);
 }
 function capitalize(value) {
   return value[0].toUpperCase() + value.slice(1);
@@ -254,6 +277,8 @@ function scheduleAnalysis(delay = 0) {
   clearTimeout(state.timer);
   state.controller?.abort();
   state.predictions = [];
+  $("move-arrows").replaceChildren();
+  $("move-arrows").hidden = true;
   $("results").replaceChildren();
   $("actual-card").hidden = true;
   $("spectrum-chart").hidden = true;
@@ -269,7 +294,7 @@ async function analyze(revision) {
   try {
     const data = await api(
       "analyze",
-      { ...payload(), ratings: selectedRatings() },
+      analysisRequest(),
       controller.signal,
     );
     if (revision !== state.revision) return;
@@ -336,11 +361,14 @@ function renderPredictions() {
     $("probability-total").textContent = "No legal moves";
     return;
   }
-  if (state.mode === "explore") renderExplore(container, predictions[0]);
+  if (state.mode === "triple") renderTriple(container, predictions);
+  else if (state.mode === "explore") renderExplore(container, predictions[0]);
   else if (state.mode === "compare") renderCompare(container, predictions);
   else renderSpectrum(container, predictions);
+  const elapsed = Math.max(...predictions.map((p) => p.elapsed_ms || 0));
+  const cached = predictions.every((p) => p.cached);
   $("probability-total").textContent =
-    `Full policy: ${(predictions[0].probability_sum * 100).toFixed(2)}% · ${predictions[0].moves.length} moves`;
+    `${cached ? "Cached" : "Model pass"} · ${elapsed.toFixed(1)} ms · ${predictions.length} matchup${predictions.length === 1 ? "" : "s"}`;
   $("history-note").textContent = state.game
     ? "Using the PGN mainline, including up to seven previous positions. Short history is padded exactly as in the official Maia pipeline."
     : "No PGN history supplied. The current position is repeated to fill the eight-position model input.";
@@ -380,6 +408,73 @@ function renderExplore(container, prediction) {
     track.append(bar);
     row.append(label, track);
     container.append(row);
+  }
+}
+function renderTriple(container, predictions) {
+  const grid = node("div", "triple-results");
+  grid.style.setProperty("--rating-count", predictions.length);
+  for (const prediction of predictions) {
+    const card = node("section", "triple-card");
+    const rating = prediction.player_elo;
+    const color = eloColor(rating);
+    const heading = node("h4", "triple-card-heading");
+    const swatch = node("span", "elo-swatch");
+    swatch.style.backgroundColor = color;
+    heading.append(swatch, node("span", "", `${rating} vs. ${prediction.opponent_elo}`));
+    card.append(heading);
+    for (const move of limitRows(prediction.moves)) {
+      const row = node("div", "triple-move");
+      row.append(node("span", "prediction-rank", String(move.rank).padStart(2, "0")), node("strong", "", move.san), node("span", "", pct(move.probability)));
+      const track = node("div", "probability-track");
+      const bar = node("div", "probability-bar");
+      bar.style.width = `${move.probability * 100}%`;
+      bar.style.backgroundColor = color;
+      track.append(bar);
+      row.append(track);
+      card.append(row);
+    }
+    grid.append(card);
+  }
+  container.append(grid);
+  renderMoveArrows(predictions);
+}
+function eloColor(rating) {
+  const ratio = (rating - 400) / 2600;
+  return `hsl(${Math.round(30 + ratio * 180)} 72% 61%)`;
+}
+function renderMoveArrows(predictions) {
+  const svg = $("move-arrows");
+  svg.replaceChildren();
+  svg.hidden = state.mode !== "triple" || !predictions.length;
+  if (svg.hidden || !predictions[0].moves.length) return;
+  const ns = "http://www.w3.org/2000/svg";
+  const make = (tag, attrs = {}) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+    return el;
+  };
+  const defs = make("defs");
+  const marker = make("marker", { id: "move-arrowhead", viewBox: "0 0 10 10", refX: "8", refY: "5", markerWidth: "4", markerHeight: "4", orient: "auto-start-reverse" });
+  marker.append(make("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "context-stroke" }));
+  defs.append(marker);
+  svg.append(defs);
+  const byElo = [...predictions].sort((a, b) => a.player_elo - b.player_elo);
+  for (const prediction of byElo) {
+    for (const move of prediction.moves.slice(0, 5)) {
+      const squarePoint = (square) => {
+        const file = square.charCodeAt(0) - 97;
+        const rank = Number(square[1]);
+        return state.flipped ? [7 - file + .5, rank - .5] : [file + .5, 8 - rank + .5];
+      };
+      const [x1, y1] = squarePoint(move.uci.slice(0, 2));
+      const [x2, y2] = squarePoint(move.uci.slice(2, 4));
+      const color = eloColor(prediction.player_elo);
+      const line = make("line", { x1, y1, x2, y2, stroke: color, "stroke-width": "0.12", "stroke-linecap": "round", "marker-end": "url(#move-arrowhead)", opacity: ".9" });
+      const title = make("title");
+      title.textContent = `${prediction.player_elo} vs. ${prediction.opponent_elo}: ${move.san} ${pct(move.probability)}`;
+      line.append(title);
+      svg.append(line, make("circle", { cx: x2, cy: y2, r: ".13", fill: color, stroke: "#142019", "stroke-width": ".035" }));
+    }
   }
 }
 function createTable(headers, spectrum = false) {
@@ -581,16 +676,18 @@ function setMode(mode) {
   $("compare-controls").hidden = mode !== "compare";
   $("limit-label").hidden = mode === "spectrum";
   $("results-title").textContent = {
+    triple: "Top moves by rating",
     explore: "Predicted moves",
     compare: "How choices change",
     spectrum: "The full rating spectrum",
   }[mode];
   $("results-subtitle").textContent = {
+    triple: "Move probabilities and arrows · higher Elo draws on top",
     explore: "A window into human choice",
     compare: "Each rating faces an equal-rated opponent",
     spectrum: "14 linked rating groups · Scroll to explore",
   }[mode];
-  if (mode === "compare") $("move-limit").value = "all";
+  if (mode !== "triple") $("move-arrows").hidden = true;
   scheduleAnalysis();
 }
 async function exportResults(format) {
@@ -601,8 +698,7 @@ async function exportResults(format) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...payload(),
-        ratings: selectedRatings(),
+        ...analysisRequest(),
         format,
         game_id: state.game?.id || null,
         ply: state.game ? state.ply : null,
@@ -648,6 +744,86 @@ document
     tab.addEventListener("click", () => setMode(tab.dataset.mode)),
   );
 $("move-limit").addEventListener("change", renderPredictions);
+function generatedRatings(count, requestedSpacing) {
+  if (count === 1) {
+    $("spacing-note").textContent = "Single rating centered on 1800; edit it below.";
+    return [1800];
+  }
+  const maximumSpacing = Math.floor(2600 / (count - 1) / 100) * 100;
+  const spacing = Math.min(requestedSpacing, maximumSpacing);
+  const first = Math.max(400, Math.min(3000 - (count - 1) * spacing, Math.round((1800 - (count - 1) * spacing / 2) / 100) * 100));
+  if (spacing !== requestedSpacing) {
+    $("spacing-note").textContent = `${requestedSpacing} requested; using ${spacing} Elo to keep all ratings within 400–3000.`;
+  } else {
+    $("spacing-note").textContent = "Centered on 1800; edit any Elo below.";
+  }
+  return Array.from({ length: count }, (_, i) => first + i * spacing);
+}
+function renderRatingInputs() {
+  $("triple-ratings").style.setProperty("--rating-count", state.ratingValues.length);
+  $("opponent-inputs").style.setProperty("--rating-count", state.opponentValues.length);
+  const renderInputs = (container, ratings, className, label) => {
+    container.replaceChildren(...ratings.map((rating, index) => {
+      const field = node("label", "rating-slot");
+      const swatch = node("span", "elo-swatch");
+      swatch.style.backgroundColor = eloColor(rating);
+      field.append(swatch, document.createTextNode(` ${label} ${index + 1}`));
+      const input = node("input", className);
+      input.type = "number";
+      input.min = "400"; input.max = "3000"; input.step = "100"; input.value = String(rating);
+      input.dataset.index = String(index);
+      input.setAttribute("aria-label", `${label} ${index + 1} Elo`);
+      field.append(input);
+      return field;
+    }));
+  };
+  renderInputs($("triple-ratings"), state.ratingValues, "elo-input", "Player");
+  renderInputs($("opponent-inputs"), state.opponentValues, "opponent-input", "Opponent");
+  $("opponent-inputs").hidden = $("equal-opponents").checked;
+}
+function regenerateRatings() {
+  const count = Number($("rating-count").value);
+  const custom = $("rating-spacing").value === "custom";
+  const spacing = Number(custom ? $("custom-spacing").value : $("rating-spacing").value);
+  state.ratingValues = generatedRatings(count, spacing);
+  state.opponentValues = [...state.ratingValues];
+  $("rating-count-value").value = String(count);
+  $("rating-count-value").textContent = String(count);
+  renderRatingInputs();
+  if (state.revision) scheduleAnalysis(100);
+}
+$("rating-count").addEventListener("input", regenerateRatings);
+$("rating-spacing").addEventListener("change", () => {
+  $("custom-spacing").hidden = $("rating-spacing").value !== "custom";
+  regenerateRatings();
+});
+$("custom-spacing").addEventListener("change", regenerateRatings);
+$("triple-ratings").addEventListener("change", (event) => {
+  const input = event.target.closest(".elo-input");
+  if (!input) return;
+  const index = Number(input.dataset.index);
+  const value = Math.max(400, Math.min(3000, Math.round(Number(input.value) / 100) * 100));
+  state.ratingValues[index] = value;
+  input.value = String(value);
+  input.closest("label").querySelector(".elo-swatch").style.backgroundColor = eloColor(value);
+  if ($("equal-opponents").checked) state.opponentValues[index] = value;
+  scheduleAnalysis(100);
+});
+$("opponent-inputs").addEventListener("change", (event) => {
+  const input = event.target.closest(".opponent-input");
+  if (!input) return;
+  const index = Number(input.dataset.index);
+  const value = Math.max(400, Math.min(3000, Math.round(Number(input.value) / 100) * 100));
+  state.opponentValues[index] = value;
+  input.value = String(value);
+  scheduleAnalysis(100);
+});
+$("equal-opponents").addEventListener("change", () => {
+  if ($("equal-opponents").checked) state.opponentValues = [...state.ratingValues];
+  renderRatingInputs();
+  scheduleAnalysis(100);
+});
+renderRatingInputs();
 $("compare-sort").addEventListener("change", renderPredictions);
 $("chart-move").addEventListener("change", () => {
   state.selectedMove = $("chart-move").value;
@@ -707,16 +883,32 @@ $("pgn-file").addEventListener("change", async (event) => {
     event.target.value = "";
   }
 });
-$("sample").addEventListener("click", async () => {
-  try {
-    await importPgn(
-      preview
-        ? preview.pgn
-        : await (await fetch(localUrl("example.pgn"))).text(),
-    );
-  } catch (error) {
-    alert(error.message);
+async function loadSamples() {
+  const samples = await api("samples");
+  const select = $("sample-game-select");
+  select.replaceChildren(node("option", "", `Choose a sample game (${samples.length})`));
+  for (const sample of samples) {
+    const option = node("option", "", `${sample.title} · ${sample.year}`);
+    option.value = sample.id;
+    option.title = sample.description;
+    select.append(option);
   }
+  select.addEventListener("change", async () => {
+    const sample = samples.find((item) => item.id === select.value);
+    if (!sample) return;
+    try { await importPgn(sample.pgn); }
+    catch (error) { alert(error.message); }
+  });
+}
+$("sample").addEventListener("click", async () => {
+  const select = $("sample-game-select");
+  const opera = Array.from(select.options).find((option) => option.value === "opera");
+  if (opera) select.value = opera.value;
+  try {
+    const response = await api("samples");
+    const game = response.find((item) => item.id === "opera");
+    if (game) await importPgn(game.pgn);
+  } catch (error) { alert(error.message); }
 });
 $("copy-fen").addEventListener("click", async () => {
   try {
@@ -772,6 +964,10 @@ if (preview) {
     navigate(0);
   });
 }
+loadSamples().catch((error) => {
+  $("sample-game-select").replaceChildren(node("option", "", "Sample library unavailable"));
+  alert(error.message);
+});
 try {
   const [health, position] = await Promise.all([
     api("health"),

@@ -1209,3 +1209,226 @@ textarea {
     animation: none;
   }
 }
+
+/* Wider analysis workspace for the three-rating view. */
+.workspace {
+  grid-template-columns: minmax(340px, 0.82fr) minmax(620px, 1.45fr);
+  gap: 24px;
+}
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.board-wrap {
+  position: relative;
+}
+.move-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+}
+.move-arrows[hidden] {
+  display: none;
+}
+.sample-select-wrap {
+  display: grid;
+  gap: 6px;
+  padding: 0 15px 14px;
+}
+.sample-select-wrap label {
+  color: var(--muted);
+  font-size: 10px;
+}
+.sample-select-wrap select {
+  width: 100%;
+}
+.triple-controls {
+  padding: 15px 18px 13px;
+  border-bottom: 1px solid var(--line);
+}
+.triple-ratings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.triple-ratings label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.triple-ratings input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px;
+  font: 11px system-ui;
+}
+.elo-swatch {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  border-radius: 50%;
+  background: hsl(99 72% 61%);
+  margin-right: 5px;
+}
+.matchup-menu {
+  margin-top: 12px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.matchup-menu summary {
+  cursor: pointer;
+  color: #b4c5b0;
+}
+.matchup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0;
+}
+.matchup-toggle input {
+  accent-color: var(--accent);
+}
+.opponent-ratings {
+  padding: 4px 0 2px;
+}
+.triple-results {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.triple-card {
+  min-width: 0;
+  padding: 11px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #19201b;
+}
+.triple-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.triple-move {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.triple-move strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.triple-move .prediction-rank {
+  color: var(--muted);
+  font-size: 8px;
+}
+.triple-move .probability-track {
+  grid-column: 2 / 4;
+  margin-top: -1px;
+}
+.triple-results + * {
+  min-width: 0;
+}
+@media (max-width: 1220px) {
+  .workspace {
+    grid-template-columns: minmax(280px, 0.75fr) minmax(520px, 1.25fr);
+  }
+  .analysis-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .board-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+@media (max-width: 740px) {
+  .board-column {
+    display: flex;
+  }
+  .triple-results {
+    grid-template-columns: 1fr;
+  }
+  .tabs {
+    gap: 18px;
+  }
+}
+.rating-generation {
+  display: grid;
+  grid-template-columns: 1fr minmax(110px, 0.8fr);
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.rating-generation > label {
+  color: var(--muted);
+  font-size: 9px;
+}
+#rating-count-value {
+  color: var(--accent);
+  font-weight: 650;
+  margin-left: 4px;
+}
+#rating-count {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: -1px 0 3px;
+  accent-color: var(--accent);
+}
+.spacing-controls {
+  display: flex;
+  gap: 6px;
+}
+.spacing-controls select,
+.spacing-controls input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 10px;
+  padding: 6px;
+}
+#spacing-note {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 9px;
+}
+.triple-ratings {
+  grid-template-columns: repeat(var(--rating-count, 3), minmax(90px, 1fr));
+  overflow-x: auto;
+  padding-bottom: 3px;
+}
+.triple-ratings .rating-slot {
+  min-width: 0;
+}
+.triple-results {
+  grid-template-columns: repeat(var(--rating-count, 3), minmax(100px, 1fr));
+  overflow-x: auto;
+}

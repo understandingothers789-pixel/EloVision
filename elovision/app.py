@@ -36,8 +36,22 @@ class PredictInput(PositionInput):
     opponent_elo: int | None = Field(default=None, ge=400, le=3000)
 
 
+class MatchupInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    player_elo: int = Field(ge=400, le=3000)
+    opponent_elo: int = Field(ge=400, le=3000)
+
+
 class AnalysisInput(PositionInput):
     ratings: list[int] = Field(default_factory=lambda: [1600], min_length=1, max_length=14)
+    matchups: list[MatchupInput] | None = Field(default=None, min_length=1, max_length=14)
+
+    def rating_pairs(self):
+        return (
+            [(item.player_elo, item.opponent_elo) for item in self.matchups]
+            if self.matchups is not None
+            else [(rating, rating) for rating in self.ratings]
+        )
 
 
 class ExportInput(AnalysisInput):
@@ -130,6 +144,13 @@ def create_app(service: InferenceService | None = None):
                     500,
                 ) from exc
 
+    @app.get("/api/v1/samples")
+    def samples():
+        import json
+
+        catalog = Path(__file__).parent / "static" / "sample-games.json"
+        return json.loads(catalog.read_text(encoding="utf-8"))
+
     @app.get("/api/v1/health")
     def health():
         return {"schema_version": "1.0", "status": "ok", "ratings": RATINGS, **engine.status()}
@@ -148,18 +169,14 @@ def create_app(service: InferenceService | None = None):
 
     @app.post("/api/v1/analyze")
     async def analyze(data: AnalysisInput):
-        predictions = await work(
-            engine.predict_many, data.prediction(), [(r, r) for r in data.ratings]
-        )
+        predictions = await work(engine.predict_many, data.prediction(), data.rating_pairs())
         return {"schema_version": "1.0", "predictions": predictions}
 
     @app.post("/api/v1/export")
     async def export(data: ExportInput):
         if data.format not in {"json", "csv"}:
             raise VisionError("invalid_format", "Choose JSON or CSV for export.")
-        predictions = await work(
-            engine.predict_many, data.prediction(), [(r, r) for r in data.ratings]
-        )
+        predictions = await work(engine.predict_many, data.prediction(), data.rating_pairs())
         exporter = export_json if data.format == "json" else export_csv
         content = exporter(predictions, data.game_id, data.ply)
         return Response(

@@ -22,7 +22,7 @@ regenerate the standalone preview with `python scripts/build_preview.py`.
 2. Download and extract this repository, or clone it. Keep the whole project directory together.
 3. Double-click **`install.bat`**. It creates `.venv`, installs CPU PyTorch and the pinned official Maia code, then downloads and SHA-256 verifies the official 79M checkpoint. Internet is required for this one-time step. The terminal stays open if a step fails.
 4. Double-click **`start.bat`**. The local server starts and opens your browser. Keep its terminal open while using the application; close it or press Ctrl+C to stop.
-5. Click **Import PGN**, or **Open a sample game**. Use the move list, navigation controls, or left/right keys. The slider defaults to **1600 vs. 1600**.
+5. Click **Import PGN**, or **Open a sample game**. Use the move list, navigation controls, or left/right keys. The explorer opens with **1400, 1800, and 2200** side by side. Choose 1–8 rating columns and generate them at 100, 200, 400, or custom spacing around 1800; then edit any rating directly. Opponent Elo can be linked or set independently. The sample library includes nine games and studies.
 
 The recommended initial device is **CPU**, including on the Ryzen 7 9800X3D / RX 9070 XT system. No CUDA assumption or AMD GPU requirement is made. The 79M checkpoint has roughly 316 MB of float32 parameters; the download/cache can use additional disk space. Performance and peak memory have not yet been measured on the target PC.
 
@@ -30,9 +30,12 @@ The recommended initial device is **CPU**, including on the Ryzen 7 9800X3D / RX
 
 - Offline piece graphics, board flip, coordinates, last-move and check highlights, and ply navigation.
 - Multi-game PGN import; UTF-8/BOM, UTF-16 and Windows-1252 files; custom starting FENs; standard-chess mainlines. Variations do not alter the mainline and are not navigable in v1.
-- Top 5, top 10, or every legal move, including actual-game move probability and rank.
-- Equal-rated opponents everywhere in the UI: selecting 2200 sends **2200 for both ratings**.
-- Two-rating comparison with signed percentage-point differences and five sorting options.
+- One to eight side-by-side rating predictions. Generate ratings around 1800 using 100, 200, 400, or custom spacing, then edit each Elo directly. The default set is 1400, 1800, 2200.
+- Each rating column shows the top five moves with a shared all-moves option.
+- Top move arrows on the board use Elo colors; higher Elo arrows appear on top when moves overlap.
+- Edit player and opponent ratings independently in 100-point steps, or link equal-rated opponents.
+- Explore nine bundled sample games and studies, including the Opera, Immortal, and Evergreen games.
+- Single-rating exploration, two-rating comparison with signed percentage-point differences and five sorting options, and the full 14-rating spectrum.
 - All 14 rating groups, a scrollable legal-move matrix, and a move-specific line chart.
 - Full-precision CSV/JSON exports with FEN, game/ply, rating conditions, history, and model provenance.
 - A reusable, versioned Python/HTTP backend for later [Nocturne reuse](docs/BACKEND.md), without any Nocturne integration.
@@ -107,4 +110,4 @@ Browser tests use Playwright and a running local server. Install Chromium with `
 
 ## License and credits
 
-ELO Vision is licensed under **AGPL-3.0**, consistent with the official Maia source dependency and the inspected 79M model card. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md). Weights are not redistributed in this repository. Chess rules and bundled SVG piece graphics use python-chess. The sample is Paul Morphy's 1858 Opera Game.
+ELO Vision is licensed under **AGPL-3.0**, consistent with the official Maia source dependency and the inspected 79M model card. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md). Weights are not redistributed in this repository. Chess rules and bundled SVG piece graphics use python-chess. Bundled samples include Paul Morphy's 1858 Opera Game and classic opening studies.

@@ -20,10 +20,9 @@ def data_uri(path: Path) -> str:
 
 
 def build_preview(output: Path) -> Path:
-    pgn = (STATIC / "example.pgn").read_text(encoding="utf-8")
+    samples = json.loads((STATIC / "sample-games.json").read_text(encoding="utf-8"))
     payload = {
-        "pgn": pgn,
-        "sample": parse_pgn(pgn),
+        "samples": [{"metadata": sample, "parsed": parse_pgn(sample["pgn"])} for sample in samples],
         "pieces": {path.stem: data_uri(path) for path in (STATIC / "pieces").glob("*.svg")},
     }
     payload_json = json.dumps(payload, ensure_ascii=True).replace("<", "\\u003c")

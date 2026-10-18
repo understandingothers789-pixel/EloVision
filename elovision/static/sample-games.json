@@ -1,0 +1,83 @@
+[
+  {
+    "id": "opera",
+    "title": "Opera Game",
+    "white": "Paul Morphy",
+    "black": "Duke Karl / Count Isouard",
+    "year": "1858",
+    "description": "The famous Paris opera house miniature.",
+    "pgn": "[Event \"Opera Game\"]\n[Site \"Paris\"]\n[Date \"1858.??.??\"]\n[Round \"?\"]\n[White \"Paul Morphy\"]\n[Black \"Duke Karl / Count Isouard\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5\n6. Bc4 Nf6 7. Qb3 Qe7 8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5\n11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7 14. Rd1 Qe6\n15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0\n"
+  },
+  {
+    "id": "immortal",
+    "title": "Immortal Game",
+    "white": "Adolf Anderssen",
+    "black": "Lionel Kieseritzky",
+    "year": "1851",
+    "description": "A celebrated attacking game ending in a queen sacrifice.",
+    "pgn": "[Event \"Immortal Game\"]\n[Site \"London\"]\n[Date \"1851.06.21\"]\n[White \"Adolf Anderssen\"]\n[Black \"Lionel Kieseritzky\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. f4 exf4 3. Bc4 Qh4+ 4. Kf1 b5 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6 10. g4 Nf6 11. Rg1 cxb5 12. h4 Qg6 13. h5 Qg5 14. Qf3 Ng8 15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 Qxb2 18. Bd6 Bxg1 19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ Nxf6 23. Be7# 1-0"
+  },
+  {
+    "id": "evergreen",
+    "title": "Evergreen Game",
+    "white": "Adolf Anderssen",
+    "black": "Jean Dufresne",
+    "year": "1852",
+    "description": "A sparkling 19th-century attacking game.",
+    "pgn": "[Event \"Evergreen Game\"]\n[Site \"Berlin\"]\n[Date \"1852\"]\n[White \"Adolf Anderssen\"]\n[Black \"Jean Dufresne\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. b4 Bxb4 5. c3 Ba5 6. d4 exd4 7. O-O d3 8. Qb3 Qf6 9. e5 Qg6 10. Re1 Nge7 11. Ba3 b5 12. Qxb5 Rb8 13. Qa4 Bb7 14. Nbd2 Bb6 15. Ne4 Qf5 16. Bxd3 Qh5 17. Nf6+ gxf6 18. exf6 Rg8 19. Rad1 Qxf3 20. Rxe7+ Nxe7 21. Qxd7+ Kxd7 22. Bf5+ Ke8 23. Bd7+ Kf8 24. Bxe7# 1-0"
+  },
+  {
+    "id": "scholars-mate",
+    "title": "Scholar’s Mate",
+    "white": "White",
+    "black": "Black",
+    "year": "Study",
+    "description": "A short opening trap that ends in an early checkmate.",
+    "pgn": "[Event \"Scholar's Mate\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0"
+  },
+  {
+    "id": "fools-mate",
+    "title": "Fool’s Mate",
+    "white": "White",
+    "black": "Black",
+    "year": "Study",
+    "description": "The shortest possible checkmate in standard chess.",
+    "pgn": "[Event \"Fool's Mate\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"0-1\"]\n\n1. f3 e5 2. g4 Qh4# 0-1"
+  },
+  {
+    "id": "legals-mate",
+    "title": "Légal’s Mate",
+    "white": "White",
+    "black": "Black",
+    "year": "Study",
+    "description": "A classic queen-sacrifice motif from the opening.",
+    "pgn": "[Event \"Legal's Mate\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 g6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5# 1-0"
+  },
+  {
+    "id": "sicilian",
+    "title": "Sicilian Defense",
+    "white": "White",
+    "black": "Black",
+    "year": "Study",
+    "description": "An open Sicilian setup after the Najdorf move order begins.",
+    "pgn": "[Event \"Sicilian Defense Study\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 e6 7. f3 b5 *"
+  },
+  {
+    "id": "ruy-lopez",
+    "title": "Ruy López",
+    "white": "White",
+    "black": "Black",
+    "year": "Study",
+    "description": "A mainline Spanish opening position after both sides develop.",
+    "pgn": "[Event \"Ruy Lopez Study\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 *"
+  },
+  {
+    "id": "queens-gambit",
+    "title": "Queen’s Gambit",
+    "white": "White",
+    "black": "Black",
+    "year": "Study",
+    "description": "A Queen’s Gambit Declined development position.",
+    "pgn": "[Event \"Queen's Gambit Study\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n\n1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 5. e3 O-O 6. Nf3 h6 7. Bh4 b6 *"
+  }
+]
