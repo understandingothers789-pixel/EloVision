@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "elovision"
+version = "1.0.0"
+description = "Explore human chess move probabilities with Maia 3 79M"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = {file = "LICENSE"}
+dependencies = [
+  "fastapi==0.115.12",
+  "uvicorn==0.34.2",
+  "python-chess==1.999",
+  "numpy==2.2.6",
+  "torch==2.8.0",
+  "huggingface-hub==0.32.4",
+  "maia3 @ https://github.com/CSSLab/maia3/archive/1e13597c42d4858b7cfd7cfdae01e297263364b2.zip",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.5", "httpx==0.28.1", "ruff==0.11.11", "playwright==1.51.0"]
+
+[project.scripts]
+elovision = "elovision.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["elovision*"]
+
+[tool.setuptools.package-data]
+elovision = ["static/*", "static/pieces/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["model: requires verified Maia 3 79M weights", "browser: requires running application and Chromium"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111614" />
+    <title>ELO Vision · Human chess, across the spectrum</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="ELO Vision home"
+        ><span class="brand-mark">E<span>V</span></span
+        ><span
+          >ELO<span class="brand-light">VISION</span
+          ><small>HUMAN CHESS EXPLORER</small></span
+        ></a
+      >
+      <div class="header-right">
+        <span class="local-badge"><i></i> Local inference</span
+        ><button id="import" class="button primary">
+          <span aria-hidden="true">↥</span> Import PGN</button
+        ><input type="file" id="pgn-file" accept=".pgn,text/plain" hidden />
+      </div>
+    </header>
+    <main>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">A DIFFERENT PERSPECTIVE ON CHESS</div>
+          <h1>See the human move.</h1>
+          <p>Explore how move choices change with playing strength.</p>
+        </div>
+        <div class="model-chip">
+          <span class="model-glyph">✦</span>
+          <div>
+            <strong>Maia 3 <span>79M</span></strong
+            ><small id="model-status">Checking model…</small>
+          </div>
+        </div>
+      </div>
+      <div id="alert" class="alert" role="alert" hidden></div>
+      <div class="workspace">
+        <section class="board-panel" aria-label="Chess position">
+          <div class="section-line">
+            <span class="section-title">THE POSITION</span
+            ><button id="fen-open" class="text-button">
+              Set FEN <span>↗</span>
+            </button>
+          </div>
+          <div class="player-strip">
+            <span class="avatar" id="top-avatar">B</span>
+            <div>
+              <strong id="top-player">Black</strong
+              ><small id="top-rating">Black pieces</small>
+            </div>
+            <span class="player-color" id="top-color">●</span>
+          </div>
+          <div class="board-wrap">
+            <div
+              id="board"
+              class="board"
+              role="img"
+              aria-label="Chessboard, starting position"
+            ></div>
+          </div>
+          <div class="player-strip bottom-player">
+            <span class="avatar light" id="bottom-avatar">W</span>
+            <div>
+              <strong id="bottom-player">White</strong
+              ><small id="bottom-rating">White pieces</small>
+            </div>
+            <span id="turn" class="turn-badge">White to move</span>
+          </div>
+          <div class="board-toolbar">
+            <button
+              id="flip"
+              class="icon-button"
+              title="Flip board"
+              aria-label="Flip board"
+            >
+              ⇅
+            </button>
+            <div class="navigation">
+              <button
+                id="first"
+                class="icon-button"
+                aria-label="Beginning of game"
+                title="Beginning"
+              >
+                |‹</button
+              ><button
+                id="prev"
+                class="icon-button"
+                aria-label="Previous move"
+                title="Previous (←)"
+              >
+                ‹</button
+              ><span id="ply-label">Start position</span
+              ><button
+                id="next"
+                class="icon-button"
+                aria-label="Next move"
+                title="Next (→)"
+              >
+                ›</button
+              ><button
+                id="last"
+                class="icon-button"
+                aria-label="End of game"
+                title="End"
+              >
+                ›|
+              </button>
+            </div>
+            <button
+              id="copy-fen"
+              class="icon-button"
+              title="Copy FEN"
+              aria-label="Copy FEN"
+            >
+              ⧉
+            </button>
+          </div>
+          <div class="board-footnote">
+            <span><kbd>←</kbd> <kbd>→</kbd> to navigate</span
+            ><span id="legal-count">20 legal moves</span>
+          </div>
+          <details class="position-details">
+            <summary>Position details</summary>
+            <code id="fen-display"></code>
+          </details>
+        </section>
+        <section class="game-panel panel" aria-label="Game notation">
+          <div class="panel-heading">
+            <h2>Game notebook</h2>
+            <span id="game-count" class="count">PGN</span>
+          </div>
+          <div class="game-select-wrap">
+            <label for="game-select" class="sr-only">Select game</label
+            ><select id="game-select" disabled>
+              <option>No game imported</option>
+            </select>
+          </div>
+          <div id="game-meta" class="game-meta">
+            <span class="eyebrow">YOUR NEXT DISCOVERY</span>
+            <h3>Every game has a story.</h3>
+            <p>Import a PGN to explore the decisions behind every move.</p>
+            <button id="sample" class="button secondary">
+              Open a sample game <span>↗</span>
+            </button>
+          </div>
+          <div class="notation-head">
+            <span>MOVE</span><span>WHITE</span><span>BLACK</span>
+          </div>
+          <div id="notation" class="notation">
+            <div class="notation-empty">
+              <span>♙</span>
+              <p>Your game moves<br />will appear here.</p>
+            </div>
+          </div>
+          <div class="game-footer">
+            <span class="small-dot"></span
+            ><span id="game-result">Mainline navigation · Standard chess</span>
+          </div>
+        </section>
+        <section
+          class="analysis-panel panel"
+          aria-label="Human move predictions"
+        >
+          <div class="panel-heading">
+            <h2>Human move explorer</h2>
+            <span id="analysis-indicator" class="live-label">MAIA 3</span>
+          </div>
+          <div class="tabs" role="tablist" aria-label="Analysis mode">
+            <button
+              class="tab active"
+              role="tab"
+              aria-selected="true"
+              id="tab-explore"
+              data-mode="explore"
+            >
+              Explore</button
+            ><button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              id="tab-compare"
+              data-mode="compare"
+            >
+              Compare</button
+            ><button
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              id="tab-spectrum"
+              data-mode="spectrum"
+            >
+              Spectrum
+            </button>
+          </div>
+          <div class="rating-control">
+            <div class="rating-heading">
+              <div>
+                <label for="elo" id="rating-label">Playing strength</label
+                ><small>Lichess blitz rating</small>
+              </div>
+              <div class="rating-value">
+                <span id="elo-value">1600</span><small>ELO</small>
+              </div>
+            </div>
+            <input
+              id="elo"
+              aria-label="Lichess blitz rating"
+              type="range"
+              min="400"
+              max="3000"
+              step="200"
+              value="1600"
+            />
+            <div class="range-labels">
+              <span>400 <span>Developing</span></span
+              ><span>3000 <span>Expert</span></span>
+            </div>
+            <div class="linked-label">
+              <span aria-hidden="true">↔</span> Equal-rated opponents
+              <strong id="matchup">1600 vs. 1600</strong>
+            </div>
+          </div>
+          <div id="compare-controls" class="compare-controls" hidden>
+            <label>Rating A<select id="rating-a"></select></label><span>→</span
+            ><label>Rating B<select id="rating-b"></select></label
+            ><label class="sort-control"
+              >Sort by<select id="compare-sort">
+                <option value="absolute">Largest absolute change</option>
+                <option value="positive">Largest increase (B − A)</option>
+                <option value="negative">Largest decrease (B − A)</option>
+                <option value="a">Probability at A</option>
+                <option value="b">Probability at B</option>
+              </select></label
+            >
+          </div>
+          <div class="results-heading">
+            <div>
+              <h3 id="results-title">Predicted moves</h3>
+              <span id="results-subtitle">A window into human choice</span>
+            </div>
+            <label id="limit-label"
+              ><span class="sr-only">Number of moves</span
+              ><select id="move-limit">
+                <option value="5">Top 5</option>
+                <option value="10">Top 10</option>
+                <option value="all">All moves</option>
+              </select></label
+            >
+          </div>
+          <div id="actual-card" class="actual-card" hidden></div>
+          <div id="loading" class="loading" role="status" hidden>
+            <span class="spinner"></span><span>Analyzing human choices…</span>
+          </div>
+          <div id="results" class="results" aria-live="polite">
+            <div class="empty-state">
+              <span class="empty-symbol">✦</span>
+              <h3>A new way to read the board.</h3>
+              <p>
+                Maia predicts human choices at your selected rating. Analysis
+                will appear here once the model is available.
+              </p>
+            </div>
+          </div>
+          <div id="spectrum-chart" class="spectrum-chart" hidden>
+            <label for="chart-move">Follow a move across ratings</label
+            ><select id="chart-move"></select>
+            <div
+              id="chart"
+              role="img"
+              aria-label="Move probability across ratings"
+            ></div>
+          </div>
+          <div class="results-footer">
+            <span id="probability-total">Full legal policy · No sampling</span>
+            <div>
+              <button id="retry" class="text-button">Retry</button
+              ><button id="export-json" class="text-button" disabled>
+                JSON ↧</button
+              ><button id="export-csv" class="text-button" disabled>
+                CSV ↧
+              </button>
+            </div>
+          </div>
+          <details class="model-note">
+            <summary>How to read these predictions <span>ⓘ</span></summary>
+            <p>
+              These are model predictions of human choices, not measured
+              frequencies or engine evaluations. The most likely move is not
+              necessarily the strongest.
+            </p>
+            <p>
+              The official code accepts ratings 0–5000. Its API does not
+              establish rating-specific training or evaluation coverage.
+              Interpret the 400 and 3000 extremes with particular caution;
+              ratings are never silently clamped.
+            </p>
+            <p id="history-note">
+              PGN history is used when available. A standalone FEN repeats its
+              current position to fill the eight-position input.
+            </p>
+          </details>
+        </section>
+      </div>
+      <footer class="page-footer">
+        <span
+          ><i class="small-dot"></i> All analysis stays on your computer</span
+        ><span>Human tendencies. A deeper understanding.</span
+        ><a href="/docs" target="_blank" rel="noopener">Backend API ↗</a>
+      </footer>
+    </main>
+    <dialog id="fen-dialog">
+      <form id="fen-form">
+        <div class="dialog-heading">
+          <h2>Start from a position</h2>
+          <button
+            type="button"
+            id="fen-close"
+            class="icon-button"
+            aria-label="Close dialog"
+          >
+            ×
+          </button>
+        </div>
+        <p>
+          Paste a standard-chess FEN. Without PGN history, Maia repeats this
+          position to fill its context.
+        </p>
+        <label for="fen-input">FEN position</label
+        ><textarea
+          id="fen-input"
+          rows="4"
+          required
+          spellcheck="false"
+        ></textarea>
+        <p id="fen-error" class="inline-error" role="alert"></p>
+        <button class="button primary" type="submit">Explore position</button>
+      </form>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>
