@@ -56,6 +56,9 @@ def install_model(config: ModelConfig, *, force=False) -> dict:
     # Keep all caches writable and together with the model. Respect explicit overrides.
     os.environ.setdefault("HF_HOME", str(config.model_dir / "huggingface"))
     os.environ.setdefault("HF_XET_CACHE", str(config.model_dir / "xet"))
+    # The official HTTP transport is simpler for local Windows/proxy installations.
+    # TLS and the official LFS checksum remain mandatory with either transport.
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
     from huggingface_hub import HfApi, hf_hub_download
 
     try:
