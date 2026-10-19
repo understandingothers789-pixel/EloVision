@@ -25,6 +25,9 @@ class StockfishService:
     def __init__(self, engine_dir: Path = ENGINE_DIR):
         self.engine_dir = engine_dir
         self._lock = threading.RLock()
+        self._analysis_state_lock = threading.Lock()
+        self._analysis_generation = 0
+        self._active_analysis = None
         self._engine_path = engine_dir / ("stockfish.exe" if os.name == "nt" else "stockfish")
         self._channel_path = engine_dir / "channel.json"
         configured = os.environ.get("ELOVISION_STOCKFISH")
@@ -231,6 +234,7 @@ class StockfishService:
         multipv: int = 5,
         hash_mb: int = 8192,
         threads: int = 14,
+        request_generation: int | None = None,
     ):
         if not 10 <= depth <= 40:
             raise VisionError("stockfish_depth", "Choose a search depth between 10 and 40.", 422)
@@ -252,6 +256,15 @@ class StockfishService:
                 "lines": [],
             }
         with self._lock:
+            with self._analysis_state_lock:
+                current_generation = self._analysis_generation
+                generation = (
+                    current_generation if request_generation is None else request_generation
+                )
+            if generation != current_generation:
+                raise VisionError(
+                    "stockfish_superseded", "A newer Stockfish search took priority.", 409
+                )
             if not self._engine_path.is_file():
                 raise VisionError(
                     "stockfish_missing",
@@ -303,11 +316,23 @@ class StockfishService:
                         options[option_name] = value
                     if options:
                         engine.configure(options)
-                    infos = engine.analyse(
+                    analysis = engine.analysis(
                         board,
                         chess.engine.Limit(depth=depth),
                         multipv=min(multipv, board.legal_moves.count()),
                     )
+                    with self._analysis_state_lock:
+                        self._active_analysis = analysis
+                        superseded = generation != self._analysis_generation
+                    if superseded:
+                        analysis.stop()
+                    try:
+                        analysis.wait()
+                        infos = analysis.multipv or analysis.info
+                    finally:
+                        with self._analysis_state_lock:
+                            if self._active_analysis is analysis:
+                                self._active_analysis = None
             except VisionError:
                 raise
             except (
@@ -363,3 +388,17 @@ class StockfishService:
             "depth": max((line["depth"] for line in lines), default=depth),
             "lines": lines,
         }
+
+    def cancel_active_analysis(self) -> int:
+        """Stop the current UCI search so a newer request can take priority."""
+        with self._analysis_state_lock:
+            self._analysis_generation += 1
+            generation = self._analysis_generation
+            analysis = self._active_analysis
+        if analysis is not None:
+            try:
+                analysis.stop()
+            except (chess.engine.EngineError, RuntimeError):
+                # The search may have finished between reading the handle and stop().
+                pass
+        return generation

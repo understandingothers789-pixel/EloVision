@@ -28,6 +28,8 @@ const state = {
   wholeGameController: null,
   maiaWarmupToken: 0,
   stockfishInFlight: null,
+  stockfishInFlightKey: null,
+  stockfishRequestToken: null,
   hoverMove: null,
   hiddenChartMoves: new Set(),
   selectedMove: null,
@@ -1440,7 +1442,7 @@ $("show-variations").addEventListener("change", () => {
 for (const id of ["stockfish-depth", "stockfish-lines-count", "stockfish-hash", "stockfish-threads"]) {
   $(id).addEventListener("change", () => {
     saveEngineSettings();
-    analyzeStockfish(true);
+    analyzeStockfish();
   });
 }
 function updateWholeGameButton() {
@@ -1575,6 +1577,7 @@ function showStockfishResult(result, key, remember = true, refreshHuman = true) 
 async function analyzeWholeGame() {
   if (state.wholeGameController) {
     state.wholeGameController.abort();
+    fetch(localUrl("api/v1/engine/cancel"), { method: "POST" }).catch(() => {});
     $("whole-game-status").textContent = "Stopping after the current engine request…";
     return;
   }
@@ -1599,10 +1602,8 @@ async function analyzeWholeGame() {
   let maiaCompleted = 0;
   let maiaError = "";
   try {
-    if (state.stockfishInFlight) {
-      $("whole-game-status").textContent = "Waiting for the current Stockfish search to finish…";
-      await state.stockfishInFlight.catch(() => {});
-    }
+    // The first whole-game request supersedes a one-position search. The API
+    // stops the old UCI search and returns its best-so-far lines to its caller.
     for (let ply = 0; ply < total; ply += 1) {
       if (controller.signal.aborted) break;
       const positionPayload = {
@@ -1613,9 +1614,10 @@ async function analyzeWholeGame() {
       const key = stockfishRequestKey(positionPayload, settings);
       $("whole-game-status").textContent = `Analyzing position ${ply + 1} of ${total} · Maia + Stockfish · depth ${settings.depth}, MultiPV ${settings.multipv}`;
       const cachedEngine = state.stockfishCache.get(key);
+      const inFlightEngine = state.stockfishInFlightKey === key ? state.stockfishInFlight : null;
       const engineTask = cachedEngine
         ? Promise.resolve(cachedEngine)
-        : (async () => {
+        : inFlightEngine || (async () => {
             const response = await fetch(localUrl("api/v1/engine/analyze"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1626,19 +1628,24 @@ async function analyzeWholeGame() {
                 hash_mb: settings.hash * 1024,
                 threads: settings.threads,
               }),
-              signal: controller.signal,
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
             rememberStockfishResult(key, data);
             return data;
           })();
-      if (!cachedEngine) state.stockfishInFlight = engineTask;
+      if (!cachedEngine && !inFlightEngine) {
+        state.stockfishInFlight = engineTask;
+        state.stockfishInFlightKey = key;
+      }
       const maiaTask = maiaError
         ? Promise.resolve(null)
         : api("analyze", maiaRequestForPosition(positionPayload), controller.signal);
       const [engineResult, maiaResult] = await Promise.allSettled([engineTask, maiaTask]);
-      if (state.stockfishInFlight === engineTask) state.stockfishInFlight = null;
+      if (state.stockfishInFlight === engineTask) {
+        state.stockfishInFlight = null;
+        state.stockfishInFlightKey = null;
+      }
       if (engineResult.status === "rejected") throw engineResult.reason;
       if (maiaResult.status === "fulfilled" && maiaResult.value) {
         maiaCompleted += 1;
@@ -1661,13 +1668,8 @@ async function analyzeWholeGame() {
     updateWholeGameButton();
   }
 }
-async function analyzeStockfish(force = false) {
+async function analyzeStockfish() {
   if (state.wholeGameController) return;
-  if (state.stockfishInFlight) {
-    await state.stockfishInFlight.catch(() => {});
-    if (state.wholeGameController) return;
-    return analyzeStockfish(force);
-  }
   const hashGb = Number($("stockfish-hash").value);
   const threads = Number($("stockfish-threads").value);
   if (!Number.isInteger(hashGb) || hashGb < 1 || hashGb > 64) {
@@ -1685,8 +1687,10 @@ async function analyzeStockfish(force = false) {
     return;
   }
   const key = stockfishRequestKey();
-  if (!force && key === state.stockfishPositionKey) return;
-  if (!force && state.stockfishCache.has(key)) {
+  if (key === state.stockfishInFlightKey && state.stockfishInFlight)
+    return state.stockfishInFlight;
+  if (key === state.stockfishPositionKey) return;
+  if (state.stockfishCache.has(key)) {
     const cached = state.stockfishCache.get(key);
     state.stockfishCache.delete(key);
     state.stockfishCache.set(key, cached);
@@ -1700,6 +1704,8 @@ async function analyzeStockfish(force = false) {
   const requestHashMb = hashGb * 1024;
   const requestThreads = threads;
   const requestPayload = { ...payload(), depth: requestDepth, multipv: requestMultiPv, hash_mb: requestHashMb, threads: requestThreads };
+  const requestToken = {};
+  state.stockfishRequestToken = requestToken;
   button.disabled = true;
   engineMessage("Stockfish is searching this position…");
   const request = fetch(localUrl("api/v1/engine/analyze"), {
@@ -1712,18 +1718,29 @@ async function analyzeStockfish(force = false) {
     return data;
   });
   state.stockfishInFlight = request;
+  state.stockfishInFlightKey = key;
   try {
     const data = await request;
+    // A canceled search can still return useful best-so-far lines. Keep those
+    // under the exact search key, including MultiPV, so an identical retry
+    // reuses them while a different MultiPV starts a fresh search.
+    rememberStockfishResult(key, data);
     if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv || Number($("stockfish-hash").value) * 1024 !== requestHashMb || Number($("stockfish-threads").value) !== requestThreads) return;
     showStockfishResult(data, key);
   } catch (error) {
-    if (JSON.stringify(payload()) === requestPosition) {
+    if (JSON.stringify(payload()) === requestPosition && state.stockfishRequestToken === requestToken) {
       engineMessage(error.message);
       stockfishError(error.message);
     }
   } finally {
-    if (state.stockfishInFlight === request) state.stockfishInFlight = null;
-    button.disabled = !state.stockfishAvailable;
+    if (state.stockfishInFlight === request) {
+      state.stockfishInFlight = null;
+      state.stockfishInFlightKey = null;
+    }
+    if (state.stockfishRequestToken === requestToken) {
+      state.stockfishRequestToken = null;
+      button.disabled = !state.stockfishAvailable;
+    }
   }
 }
 async function installStockfish(file) {
@@ -1770,7 +1787,7 @@ async function installStockfish(file) {
     engineMessage(`${data.name} is ready.`);
     stockfishError();
     setStockfishChannelLink();
-    if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish(true);
+    if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish();
   } catch (error) {
     // Installation replaces the old binary only after the candidate validates.
     // Keep the existing engine usable when a replacement upload is rejected.
@@ -1790,7 +1807,7 @@ async function installStockfish(file) {
     $("stockfish-file").value = "";
   }
 }
-$("stockfish-analyze").addEventListener("click", () => analyzeStockfish(true));
+$("stockfish-analyze").addEventListener("click", () => analyzeStockfish());
 $("whole-game-analyze").addEventListener("click", analyzeWholeGame);
 $("engine-reset-defaults").addEventListener("click", () => {
   $("stockfish-lines-count").value = String(DEFAULT_ENGINE_SETTINGS.multipv);
@@ -1800,7 +1817,7 @@ $("engine-reset-defaults").addEventListener("click", () => {
   $("show-variations").checked = DEFAULT_ENGINE_SETTINGS.variations;
   $("stockfish-results").classList.toggle("show-variations", state.mode === "stockfish");
   saveEngineSettings();
-  analyzeStockfish(true);
+  analyzeStockfish();
 });
 document.querySelectorAll(".settings-tab").forEach((tab) =>
   tab.addEventListener("click", () => setSettingsTab(tab.dataset.settingsTab)),

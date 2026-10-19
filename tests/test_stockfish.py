@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 
 import chess
 import pytest
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from elovision.app import create_app
 from elovision.errors import VisionError
+from elovision.inference import PredictionRequest
 from elovision.stockfish import MAX_ENGINE_BYTES, MAX_ENGINE_SIZE_LABEL, StockfishService
 
 FAKE_STOCKFISH = f"""#!{sys.executable}
@@ -92,6 +94,60 @@ def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
             "/api/v1/engine/analyze",
             json={"fen": chess.STARTING_FEN, "depth": 41, "multipv": 5},
         ).status_code == 422
+
+
+def test_new_stockfish_request_stops_search_and_keeps_best_so_far(tmp_path, monkeypatch):
+    started = threading.Event()
+    stopped = threading.Event()
+
+    class Analysis:
+        multipv = [{"pv": [chess.Move.from_uci("e2e4")], "depth": 7}]
+        info = {}
+
+        def wait(self):
+            assert stopped.wait(2)
+
+        def stop(self):
+            stopped.set()
+
+    class Engine:
+        id = {"name": "Stockfish 19 test"}
+        options = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def configure(self, _options):
+            pass
+
+        def analysis(self, *_args, **_kwargs):
+            started.set()
+            return Analysis()
+
+    engine_dir = tmp_path / ".engines"
+    engine_dir.mkdir()
+    binary = engine_dir / ("stockfish.exe" if os.name == "nt" else "stockfish")
+    binary.write_bytes(b"fixture")
+    service = StockfishService(engine_dir)
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda *_a, **_k: Engine())
+    service_request = PredictionRequest(chess.STARTING_FEN, 1800)
+    result = []
+    worker = threading.Thread(
+        target=lambda: result.append(service.analyze(service_request, depth=10))
+    )
+    worker.start()
+    assert started.wait(2)
+    service.cancel_active_analysis()
+    worker.join(2)
+    assert not worker.is_alive()
+    assert result[0]["depth"] == 7
+    assert result[0]["lines"][0]["san"] == "e4"
+    current_generation = service.cancel_active_analysis()
+    with pytest.raises(VisionError, match="newer Stockfish search took priority"):
+        service.analyze(service_request, depth=10, request_generation=current_generation - 1)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The protocol fixture uses a Unix executable script.")

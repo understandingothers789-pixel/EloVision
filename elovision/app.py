@@ -169,10 +169,6 @@ def create_app(
                 ) from exc
 
     async def stockfish_work(fn, *args):
-        if stockfish_pending.locked():
-            raise VisionError(
-                "stockfish_busy", "Stockfish is busy. Wait for the current search to finish.", 429
-            )
         async with stockfish_pending:
             try:
                 return await asyncio.get_running_loop().run_in_executor(
@@ -248,6 +244,9 @@ def create_app(
 
     @app.post("/api/v1/engine/analyze")
     async def stockfish_analyze(data: StockfishInput):
+        # A newer request owns the engine. Stop the current UCI search before it
+        # enters the single-engine queue; its best-so-far lines remain usable.
+        generation = stockfish.cancel_active_analysis()
         return await stockfish_work(
             stockfish.analyze,
             data.prediction(),
@@ -255,7 +254,13 @@ def create_app(
             data.multipv,
             data.hash_mb,
             data.threads,
+            generation,
         )
+
+    @app.post("/api/v1/engine/cancel")
+    async def stockfish_cancel():
+        stockfish.cancel_active_analysis()
+        return {"cancelled": True}
 
     @app.get("/api/v1/samples")
     def samples():

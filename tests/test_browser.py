@@ -438,7 +438,7 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert not errors
 
 
-def test_whole_game_waits_for_the_current_stockfish_search(page):
+def test_whole_game_reuses_the_current_identical_stockfish_search(page):
     from playwright.sync_api import expect
 
     page.add_init_script(
@@ -513,14 +513,14 @@ def test_whole_game_waits_for_the_current_stockfish_search(page):
     page.locator("#sample").click()
     expect(page.locator("#whole-game-analyze")).to_be_enabled()
     page.locator("#whole-game-analyze").click()
-    expect(page.locator("#whole-game-status")).to_contain_text(
-        "Waiting for the current Stockfish search"
-    )
+    expect(page.locator("#whole-game-status")).to_contain_text("Analyzing position 1")
     page.evaluate("window.__releaseFirstStockfish()")
     page.locator("#whole-game-status").filter(
         has_text="Complete · 34 positions analyzed"
     ).wait_for()
-    assert page.evaluate("window.__stockfishMaxActive") == 1
+    # The stale browser fetch may still be resolving while the latest request
+    # runs; the backend serializes UCI work and cancels the older engine search.
+    assert page.evaluate("window.__stockfishMaxActive") <= 2
 
 
 def test_browser_engine_settings_persist_and_restore_defaults(page):
@@ -750,6 +750,12 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     assert len(engine_requests) == requests_after_searching_both_positions
     assert len(maia_position_requests()) == maia_requests_after_warmup
     assert page.locator("#stockfish-results .stockfish-line").count() == 1
+    page.locator("#stockfish-analyze").click()
+    page.wait_for_timeout(100)
+    assert len(engine_requests) == requests_after_searching_both_positions
+    page.locator("#stockfish-lines-count").select_option("3")
+    page.wait_for_timeout(200)
+    assert len(engine_requests) == requests_after_searching_both_positions + 1
 
 
 def test_browser_upload_accepts_150_mib_engine_file(page):
