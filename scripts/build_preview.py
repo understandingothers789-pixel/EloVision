@@ -29,6 +29,7 @@ def build_preview(output: Path) -> Path:
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     css = (STATIC / "style.css").read_text(encoding="utf-8")
     script = (STATIC / "app.js").read_text(encoding="utf-8")
+    layout_script = (STATIC / "layout.js").read_text(encoding="utf-8")
     # Inline code waits for the DOM, replacing the normal module's deferred execution.
     inline_script = (
         "<script>\n"
@@ -43,6 +44,10 @@ def build_preview(output: Path) -> Path:
     replacements = {
         '<link rel="stylesheet" href="./style.css" />': f"<style>\n{css}\n</style>",
         '<script src="./app.js" type="module"></script>': inline_script,
+        '<script src="./layout.js" type="module"></script>': (
+            "<script>document.addEventListener('DOMContentLoaded', () => {\n"
+            + layout_script + "\n});</script>"
+        ),
         'href="./favicon.svg"': f'href="{data_uri(STATIC / "favicon.svg")}"',
         'href="./docs"': 'href="https://github.com/understandingothers789-pixel/'
         'EloVision/blob/main/docs/BACKEND.md"',

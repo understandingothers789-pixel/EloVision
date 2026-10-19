@@ -1,10 +1,11 @@
-"""Real browser checks. Synthetic policy fixtures are confined to one rendering test."""
+"""Real browser checks. Synthetic Maia/engine responses are confined to test routes."""
 
 import json
 import os
 
 import chess
 import pytest
+from playwright.sync_api import expect
 
 pytestmark = pytest.mark.browser
 BASE_URL = os.environ.get("ELOVISION_BROWSER_URL")
@@ -526,7 +527,9 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#stockfish-results .stockfish-line").first.wait_for()
     assert any(
         len(request.get("moves", [])) == 1
-        and request.get("matchups") == [{"player_elo": 2400, "opponent_elo": 1200}]
+        # SF Only now populates the full rating graph, including this pairing,
+        # instead of sending a redundant single-rating Maia request.
+        and {"player_elo": 2400, "opponent_elo": 1200} in request.get("matchups", [])
         for request in requested
     )
     page.locator("#view-dual").click()
@@ -1253,3 +1256,220 @@ def test_auto_stockfish_is_opt_in_and_maia_still_warms_the_selected_game(page):
     page.get_by_role("button", name="e5", exact=True).click()
     page.wait_for_timeout(100)
     assert len(engine_requests) == 2
+
+
+def layout_preferences(page, workspace="analysis"):
+    return page.evaluate(
+        "name => JSON.parse(localStorage.getItem('elovision-workspace-layout-v1')).pages[name]",
+        workspace,
+    )
+
+
+def drag_layout_control(page, control, dx, dy):
+    control.scroll_into_view_if_needed()
+    bounds = control.bounding_box()
+    x, y = bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + dx, y + dy, steps=12)
+    page.mouse.up()
+
+
+def test_layout_drag_resize_persist_and_keep_navigation_on_the_board(page):
+    page.set_viewport_size({"width": 1600, "height": 1200})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(BASE_URL)
+    page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
+    page.get_by_role("button", name="e4", exact=True).wait_for()
+    page.locator("#layout-preset").select_option("focus")
+    page.locator("#layout-edit").click()
+    unit = page.locator(".workspace").bounding_box()["width"] / 24
+    drag_layout_control(
+        page, page.get_by_role("button", name="Move Game notebook", exact=True),
+        unit * 7, 16 * 53,
+    )
+    moved = layout_preferences(page)["panels"]
+    assert moved["game"]["x"] == 7 and moved["game"]["y"] >= 52
+    assert moved["game"]["y"] >= moved["board"]["y"] + moved["board"]["h"]
+    before = moved["board"]
+    drag_layout_control(
+        page, page.get_by_role("button", name="Resize Chessboard se", exact=True),
+        -unit * 2, -16 * 6,
+    )
+    after = layout_preferences(page)["panels"]["board"]
+    assert after["w"] == before["w"] - 2
+    assert after["h"] == before["h"] - 6
+    page.locator("#layout-edit").click()
+    board = page.locator("#board").bounding_box()
+    assert abs(board["height"] - board["width"]) < 1
+    assert page.locator(".square").count() == 64
+    page.locator("#last").click()
+    # Navigating the board must scroll only the notebook's move list, not the page.
+    assert page.evaluate("scrollY") < 100
+    assert "Checkmate" in page.locator("#turn").text_content()
+    saved = layout_preferences(page)
+    page.reload()
+    expect(page.locator(".dock-frame:visible")).to_have_count(5)
+    assert layout_preferences(page) == saved
+    assert not errors
+
+
+def test_layout_presets_reset_and_independent_workspace_preferences(page):
+    page.goto(BASE_URL)
+    page.locator("#layout-preset").select_option("notebook")
+    assert page.locator(".game-panel").bounding_box()["y"] > (
+        page.locator(".board-panel").bounding_box()["y"]
+    )
+    analysis = layout_preferences(page)
+    page.locator("#workspace-explorer").click()
+    expect(page.locator(".dock-frame")).to_have_count(0)
+    page.locator("#layout-preset").select_option("focus")
+    expect(page.locator(".dock-frame:visible")).to_have_count(3)
+    assert page.locator("#maia-view").is_visible()
+    page.locator("#tab-compare").click()
+    assert page.locator("#compare-controls").is_visible()
+    page.locator("#layout-reset").click()
+    expect(page.locator(".dock-frame")).to_have_count(0)
+    assert page.locator(".workspace > .game-panel").is_visible()
+    page.locator("#workspace-analysis").click()
+    expect(page.locator(".dock-frame:visible")).to_have_count(5)
+    assert layout_preferences(page) == analysis
+    page.locator("#settings-tab-options").click()
+    assert page.locator("#elo").is_visible()
+    page.locator("#layout-reset").click()
+    assert page.locator(".analysis-panel #analysis-options").is_visible()
+    assert page.locator("#dual-view .rating-chart-panel").is_visible()
+    assert page.locator("#board").is_visible()
+
+
+def test_layout_keyboard_controls_and_escape_cancel_drag(page):
+    page.goto(BASE_URL)
+    page.locator("#layout-edit").click()
+    handle = page.get_by_role("button", name="Move Game notebook", exact=True)
+    before = page.locator("[data-layout-panel=game]").bounding_box()
+    handle.press("ArrowDown")
+    first = layout_preferences(page)["panels"]["game"]
+    assert page.locator("[data-layout-panel=game]").bounding_box()["y"] == before["y"] + 16
+    handle.press("Shift+ArrowRight")
+    assert layout_preferences(page)["panels"]["game"]["w"] == first["w"] + 1
+    saved = layout_preferences(page)
+    bounds = handle.bounding_box()
+    page.mouse.move(bounds["x"] + 50, bounds["y"] + 12)
+    page.mouse.down()
+    page.mouse.move(bounds["x"] + 160, bounds["y"] + 140, steps=8)
+    page.keyboard.press("Escape")
+    page.mouse.up()
+    assert layout_preferences(page) == saved
+    assert not page.locator(".layout-moving").count()
+    assert page.locator("#layout-edit").get_attribute("aria-pressed") == "true"
+
+
+def test_layout_all_resize_edges_and_corners_keep_panels_separate(page):
+    page.set_viewport_size({"width": 1600, "height": 1200})
+    page.goto(BASE_URL)
+    page.locator("#layout-preset").select_option("focus")
+    page.locator("#layout-edit").click()
+    unit = page.locator(".workspace").bounding_box()["width"] / 24
+    for edge in ("n", "e", "s", "w", "ne", "se", "sw", "nw"):
+        page.locator("#layout-preset").select_option("focus")
+        before = layout_preferences(page)["panels"]["board"]
+        dx = unit if "w" in edge else -unit if "e" in edge else 0
+        dy = 32 if "n" in edge else -32 if "s" in edge else 0
+        drag_layout_control(
+            page, page.get_by_role("button", name=f"Resize Chessboard {edge}", exact=True),
+            dx, dy,
+        )
+        rects = layout_preferences(page)["panels"]
+        assert rects["board"]["w"] == before["w"] - int(bool(dx))
+        assert rects["board"]["h"] == before["h"] - 2 * int(bool(dy))
+        for first, a in rects.items():
+            for second, b in rects.items():
+                if first == second:
+                    continue
+                assert not (a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+                            and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"])
+
+
+def test_layout_narrow_screen_restores_live_panels_without_losing_preferences(page):
+    page.goto(BASE_URL)
+    page.locator("#layout-preset").select_option("focus")
+    stored = layout_preferences(page)
+    for tab in ("analysis", "explorer"):
+        page.locator(f"#workspace-{tab}").click()
+        page.locator("#layout-preset").select_option("focus")
+        for width in (820, 390):
+            page.set_viewport_size({"width": width, "height": 900})
+            expect(page.locator(".dock-frame")).to_have_count(0)
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            assert page.locator("#layout-edit").is_disabled()
+            board = page.locator("#board").bounding_box()
+            assert abs(board["height"] - board["width"]) < 1
+        page.set_viewport_size({"width": 1440, "height": 1000})
+        expect(page.locator(".custom-layout")).to_have_count(1)
+    page.locator("#workspace-analysis").click()
+    assert layout_preferences(page) == stored
+    assert page.locator("#settings-tab-engine").is_visible()
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+def test_layout_recovers_from_corrupt_or_unavailable_browser_storage(page, blocked):
+    if blocked:
+        page.add_init_script("""Object.defineProperty(window, 'localStorage', {
+            get() { throw new DOMException('Storage blocked', 'SecurityError'); }
+        });""")
+    else:
+        page.add_init_script("""localStorage.setItem('elovision-workspace-layout-v1',
+            JSON.stringify({version:1,pages:{analysis:{panels:{game:{x:999,y:-4,w:1,h:1}}}}}));""")
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(BASE_URL)
+    page.locator(".square").nth(63).wait_for()
+    assert not page.locator(".dock-frame").count()
+    page.locator("#layout-preset").select_option("notebook")
+    expect(page.locator(".dock-frame:visible")).to_have_count(5)
+    page.locator("#layout-reset").click()
+    expect(page.locator(".dock-frame")).to_have_count(0)
+    assert not errors
+
+
+def test_layout_keeps_live_rating_graph_in_sf_only_without_restarting_analysis(page):
+    requests = []
+
+    def fixture(route):
+        data = json.loads(route.request.post_data)
+        requests.append(data)
+        board = chess.Board(data["fen"])
+        moves = list(board.legal_moves)
+        matchups = data.get("matchups") or [
+            {"player_elo": rating, "opponent_elo": rating} for rating in data["ratings"]
+        ]
+        route.fulfill(json={"predictions": [
+            {**pair, "moves": [
+                {"uci": move.uci(), "san": board.san(move), "rank": i + 1,
+                 "probability": 1 / len(moves)} for i, move in enumerate(moves)
+            ], "probability_sum": 1, "model": {"id": "layout-browser-fixture"}}
+            for pair in matchups
+        ]})
+
+    page.route("**/api/v1/analyze", fixture)
+    page.goto(BASE_URL)
+    page.locator("#rating-comparison-chart svg").wait_for()
+    page.locator("#view-stockfish").click()
+    svg = page.locator("#rating-comparison-chart svg")
+    svg.wait_for()
+    svg.evaluate("element => element.dataset.layoutProbe = 'original'")
+    count = len(requests)
+    page.locator("#layout-preset").select_option("focus")
+    page.locator("#layout-edit").click()
+    handle = page.get_by_role("button", name="Move Moves by Rating", exact=True)
+    handle.press("Shift+ArrowDown")
+    handle.press("ArrowDown")
+    page.locator("#layout-edit").click()
+    assert svg.get_attribute("data-layout-probe") == "original"
+    legend = page.locator(".chart-legend-button").first
+    legend.click()
+    assert page.locator(".chart-legend-button").first.get_attribute("aria-pressed") == "false"
+    assert len(requests) == count
+    assert page.locator("#dual-results").get_attribute("class").endswith("pure-stockfish")
+    assert svg.is_visible()

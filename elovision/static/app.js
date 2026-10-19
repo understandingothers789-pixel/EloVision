@@ -335,9 +335,15 @@ function renderBoard() {
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-current", selected ? "step" : "false");
   });
-  document
-    .querySelector(".move-button.selected")
-    ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const selectedMove = document.querySelector(".move-button.selected");
+  if (selectedMove) {
+    // Keep notation in sync without scrolling the whole page to a docked notebook.
+    const notation = $("notation");
+    const viewport = notation.getBoundingClientRect();
+    const move = selectedMove.getBoundingClientRect();
+    if (move.bottom > viewport.bottom) notation.scrollTop += move.bottom - viewport.bottom;
+    else if (move.top < viewport.top) notation.scrollTop -= viewport.top - move.top;
+  }
   renderGauges();
   if (state.predictions.length || state.stockfish?.lines?.length)
     renderMoveArrows(state.predictions);
@@ -1395,6 +1401,7 @@ function setWorkspaceTab(tab) {
   placeAnalysisControls();
   hideMoveInspector();
   setMode(tab === "analysis" ? state.analysisMode : state.maiaMode);
+  document.dispatchEvent(new CustomEvent("elovision:workspace-changed", { detail: tab }));
 }
 function placeAnalysisControls() {
   if (state.workspaceTab === "analysis") $("analysis-control-slot").append($("rating-control"));

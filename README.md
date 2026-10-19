@@ -37,6 +37,7 @@ By default, `ELOVISION_DEVICE=auto` uses a GPU visible to PyTorch and otherwise 
 - Top move arrows on the board use Elo colors; higher Elo arrows appear on top when moves overlap.
 - Optional Stockfish 19 or user-supplied Stockfish development analysis can be paired beside Maia human-move probabilities or used in an engine-only view. The board shows separate Maia probability and Stockfish evaluation gauges, with optional principal variations; see [Stockfish setup](docs/STOCKFISH.md).
 - A compact **Analysis** workspace pairs human and engine move tables, a computed disagreement summary, move inspection, and an interactive rating graph with labeled axes and endpoint moves. **Maia Explorer** retains the multi-rating tools and exports in its own tab.
+- Movable, resizable workspaces with **Arrange layout**, **Board focus** and **Notebook below** presets, per-page browser preferences, and a **Reset layout** button.
 - Edit player and opponent ratings independently in 100-point steps, or link equal-rated opponents.
 - Explore nine bundled sample games and studies, including the Opera, Immortal, and Evergreen games.
 - Single-rating exploration, two-rating comparison with signed percentage-point differences and five sorting options, and the full 14-rating spectrum.
@@ -44,6 +45,23 @@ By default, `ELOVISION_DEVICE=auto` uses a GPU visible to PyTorch and otherwise 
 - Full-precision CSV/JSON exports with FEN, game/ply, rating conditions, history, and model provenance.
 - A reusable, versioned Python/HTTP backend for later [Nocturne reuse](docs/BACKEND.md), without any Nocturne integration.
 - Lazy model loading once per session, bounded history-aware LRU cache, background inference and Stockfish search, request debouncing, and rejection of stale UI responses.
+
+## Arrange your workspace
+
+In a window at least 1100 pixels wide, click **Arrange layout** above the board.
+Drag a panel's purple header to move it, or drag its edges/corners to resize it.
+The notebook, board, analysis, rating graph, and settings can be placed independently;
+Maia Explorer has its own notebook, board, and human-analysis layout. Other panels
+make room after a drop, and the chessboard always stays square.
+
+Click **Done arranging** to hide the handles. Changes are saved in this browser
+for each page separately. A focused panel header also supports arrow keys to move
+and **Shift + arrows** to resize; **Esc** cancels an active drag. The preset menu
+offers **Classic layout**, **Board focus** (settings below a shorter notebook),
+and **Notebook below**. **Reset layout** restores the current page's original layout.
+On smaller screens panels return to the normal stacked layout; widening the window
+restores the saved arrangement. If browser storage is unavailable, arrangement still
+works for the current session.
 
 ## Linux / macOS development
 

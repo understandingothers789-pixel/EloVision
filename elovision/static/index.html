@@ -8,6 +8,7 @@
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./style.css" />
     <script src="./app.js" type="module"></script>
+    <script src="./layout.js" type="module"></script>
   </head>
   <body class="analysis-theme">
     <header class="topbar">
@@ -41,6 +42,7 @@
         </div>
       </div>
       <div id="alert" class="alert" role="alert" hidden></div>
+      <div class="workspace-toolbar">
       <div class="workspace-tabs" role="tablist" aria-label="Analysis workspace">
         <button id="workspace-analysis" class="workspace-tab active" role="tab" aria-selected="true" data-workspace="analysis">
           Analysis
@@ -49,6 +51,20 @@
           Maia Explorer
         </button>
       </div>
+      <div class="layout-actions" aria-label="Workspace layout">
+        <label class="sr-only" for="layout-preset">Layout preset</label>
+        <select id="layout-preset" aria-label="Layout preset">
+          <option value="classic">Classic layout</option>
+          <option value="focus">Board focus</option>
+          <option value="notebook">Notebook below</option>
+          <option value="custom" disabled>Custom layout</option>
+        </select>
+        <button id="layout-edit" class="button secondary" aria-pressed="false">Arrange layout</button>
+        <button id="layout-reset" class="text-button" title="Restore the default layout for this page">Reset layout</button>
+      </div>
+      </div>
+      <p id="layout-help" class="layout-help" hidden>Drag panel headers to move them. Drag edges or corners to resize. Arrow keys move a focused header; Shift + arrows resize. Esc cancels a drag.</p>
+      <span id="layout-status" class="sr-only" role="status" aria-live="polite"></span>
       <div class="workspace analysis-layout">
         <section class="game-panel panel" aria-label="Game notation">
           <div class="panel-heading">
