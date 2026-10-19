@@ -1,6 +1,8 @@
 """Optional, user-supplied Stockfish 19 UCI engine integration."""
 
 import os
+import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -12,7 +14,8 @@ from .errors import VisionError
 from .inference import PredictionRequest
 
 ENGINE_DIR = Path(__file__).resolve().parents[1] / ".engines"
-MAX_ENGINE_BYTES = 100 * 1024 * 1024
+MAX_ENGINE_BYTES = 512 * 1024 * 1024
+MAX_ENGINE_SIZE_LABEL = f"{MAX_ENGINE_BYTES // (1024 * 1024)} MiB"
 
 
 class StockfishService:
@@ -47,6 +50,26 @@ class StockfishService:
                 503,
             )
         try:
+            with path.open("rb") as binary:
+                signature = binary.read(4)
+            if os.name == "nt" and signature == b"\x7fELF":
+                raise VisionError(
+                    "stockfish_platform",
+                    "This is a Linux engine. Choose the Stockfish build for Windows "
+                    "and your PC’s processor.",
+                    422,
+                )
+            if os.name != "nt" and signature[:2] == b"MZ":
+                system = "Linux" if sys.platform.startswith("linux") else "this operating system"
+                message = (
+                    f"This is a Windows .exe, but ELO Vision is running on {system}. "
+                    "Choose a native Stockfish build for this computer."
+                )
+                raise VisionError(
+                    "stockfish_platform",
+                    message,
+                    422,
+                )
             with chess.engine.SimpleEngine.popen_uci(str(path), timeout=12) as engine:
                 name = engine.id.get("name", "Unknown UCI engine")
                 lower_name = name.lower()
@@ -79,7 +102,7 @@ class StockfishService:
             raise VisionError(
                 "stockfish_start",
                 "Stockfish could not start. Choose the extracted "
-                "Stockfish executable for this computer.",
+                "Stockfish executable built for this computer’s operating system and processor.",
                 422,
             ) from exc
 
@@ -93,6 +116,7 @@ class StockfishService:
         return {"available": True, "name": name, "channel": self._channel}
 
     def install(self, filename: str, content: bytes, channel: str = "official19"):
+        """Compatibility wrapper for callers that already hold an in-memory upload."""
         if channel not in {"official19", "development"}:
             raise VisionError(
                 "stockfish_channel", "Choose Stockfish 19 or a development build.", 422
@@ -100,7 +124,41 @@ class StockfishService:
         if not content:
             raise VisionError("stockfish_empty", "The selected engine file is empty.", 400)
         if len(content) > MAX_ENGINE_BYTES:
-            raise VisionError("stockfish_too_large", "Engine files must be 100 MB or smaller.", 413)
+            raise VisionError(
+                "stockfish_too_large",
+                f"Engine files must be {MAX_ENGINE_SIZE_LABEL} or smaller.",
+                413,
+            )
+        self.engine_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(filename).suffix.lower()
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=".stockfish-upload-",
+                suffix=suffix,
+                dir=self.engine_dir,
+                delete=False,
+            ) as upload:
+                temporary = Path(upload.name)
+                upload.write(content)
+            return self.install_file(filename, temporary, channel)
+        except OSError as exc:
+            raise VisionError(
+                "stockfish_storage",
+                "Could not save the engine. Check free disk space and write access "
+                "to the ELO Vision folder.",
+                507,
+            ) from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def install_file(self, filename: str, source: Path, channel: str = "official19"):
+        """Validate and atomically install a staged upload without reading it into memory."""
+        if channel not in {"official19", "development"}:
+            raise VisionError(
+                "stockfish_channel", "Choose Stockfish 19 or a development build.", 422
+            )
         suffix = Path(filename).suffix.lower()
         if suffix not in {".exe", ".bin", ""}:
             raise VisionError(
@@ -108,24 +166,42 @@ class StockfishService:
                 "Choose the extracted Stockfish executable, not its ZIP file.",
                 400,
             )
+        try:
+            size = source.stat().st_size
+        except OSError as exc:
+            raise VisionError(
+                "stockfish_upload_missing", "The uploaded engine file could not be read.", 400
+            ) from exc
+        if not size:
+            raise VisionError("stockfish_empty", "The selected engine file is empty.", 400)
+        if size > MAX_ENGINE_BYTES:
+            raise VisionError(
+                "stockfish_too_large",
+                f"Engine files must be {MAX_ENGINE_SIZE_LABEL} or smaller.",
+                413,
+            )
         self.engine_dir.mkdir(parents=True, exist_ok=True)
         destination = self.engine_dir / ("stockfish.exe" if os.name == "nt" else "stockfish")
         with self._lock:
-            # UCI launches the temporary path, so preserve the platform executable suffix.
-            temporary = self.engine_dir / f".stockfish-upload{destination.suffix or '.bin'}"
+            channel_temporary = self._channel_path.with_suffix(".tmp")
             try:
-                temporary.write_bytes(content)
                 if os.name != "nt":
-                    temporary.chmod(0o700)
-                name = self._identify(temporary, channel)
-                os.replace(temporary, destination)
+                    source.chmod(0o700)
+                name = self._identify(source, channel)
+                os.replace(source, destination)
                 if os.name != "nt":
                     destination.chmod(0o700)
-                channel_temporary = self._channel_path.with_suffix(".tmp")
                 channel_temporary.write_text(channel, encoding="utf-8")
                 os.replace(channel_temporary, self._channel_path)
+            except OSError as exc:
+                raise VisionError(
+                    "stockfish_storage",
+                    "Could not install the engine. Check free disk space and write access "
+                    "to the ELO Vision folder.",
+                    507,
+                ) from exc
             finally:
-                temporary.unlink(missing_ok=True)
+                channel_temporary.unlink(missing_ok=True)
         self._engine_path = destination
         self._channel = channel
         return {"available": True, "name": name, "channel": channel}

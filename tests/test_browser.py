@@ -263,3 +263,38 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#stockfish-channel").select_option("development")
     assert "tests.stockfishchess.org" in page.locator("#stockfish-download").get_attribute("href")
     assert not errors
+
+
+def test_browser_upload_accepts_150_mib_engine_file(page):
+    requested = []
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={"available": False, "name": None, "channel": "official19"}
+        ),
+    )
+
+    def install(route):
+        requested.append(route.request.headers.get("x-engine-filename"))
+        route.fulfill(
+            json={
+                "available": True,
+                "name": "Stockfish 19 browser fixture",
+                "channel": "official19",
+            }
+        )
+
+    page.route("**/api/v1/engine/install", install)
+    page.goto(BASE_URL)
+    page.locator("#workspace-explorer").click()
+    page.locator("#stockfish-panel summary").click()
+    page.locator("#stockfish-file").evaluate(
+        "input => { const file = new File(['MZ'], "
+        "'stockfish-windows-x86-64-universal.exe'); "
+        "Object.defineProperty(file, 'size', { configurable: true, "
+        "value: 150 * 1024 * 1024 }); const transfer = new DataTransfer(); "
+        "transfer.items.add(file); input.files = transfer.files; "
+        "input.dispatchEvent(new Event('change', { bubbles: true })); }"
+    )
+    page.get_by_text("Stockfish 19 browser fixture · ready", exact=True).wait_for()
+    assert requested == ["stockfish-windows-x86-64-universal.exe"]

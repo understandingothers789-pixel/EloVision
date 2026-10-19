@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const RATINGS = Array.from({ length: 14 }, (_, i) => 400 + i * 200);
+const MAX_ENGINE_BYTES = 512 * 1024 * 1024;
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 // Set only by the standalone preview builder; contains real board states, never policy data.
 const preview = globalThis.ELOVISION_PREVIEW || null;
@@ -1101,13 +1102,15 @@ async function analyzeStockfish(force = false) {
 }
 async function installStockfish(file) {
   if (!file) return;
-  if (file.size > 100 * 1024 * 1024) {
-    engineMessage("Choose a Stockfish executable no larger than 100 MB.");
+  if (file.size > MAX_ENGINE_BYTES) {
+    engineMessage("Choose a Stockfish executable no larger than 512 MiB (about 537 MB).");
     return;
   }
   const channel = $("stockfish-channel").value;
   $("stockfish-choose").disabled = true;
-  $("stockfish-status").textContent = channel === "official19" ? "Checking Stockfish 19…" : "Checking development build…";
+  $("stockfish-status").textContent = channel === "official19"
+    ? "Uploading and checking Stockfish 19…"
+    : "Uploading and checking development build…";
   try {
     const response = await fetch(localUrl("api/v1/engine/install"), {
       method: "POST",

@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,7 +21,7 @@ from .config import RATINGS
 from .errors import VisionError
 from .export import export_csv, export_json
 from .inference import InferenceService, PredictionRequest
-from .stockfish import MAX_ENGINE_BYTES, StockfishService
+from .stockfish import MAX_ENGINE_BYTES, MAX_ENGINE_SIZE_LABEL, StockfishService
 
 
 class PositionInput(BaseModel):
@@ -111,13 +113,13 @@ def create_app(
         try:
             limit = MAX_ENGINE_BYTES if request.url.path == "/api/v1/engine/install" else 2_500_000
             if int(request.headers.get("content-length", "0")) > limit:
+                message = (
+                    f"Engine files must be {MAX_ENGINE_SIZE_LABEL} or smaller."
+                    if request.url.path == "/api/v1/engine/install"
+                    else "Request exceeds the upload limit."
+                )
                 return JSONResponse(
-                    {
-                        "error": {
-                            "code": "request_too_large",
-                            "message": "Request exceeds the upload limit.",
-                        }
-                    },
+                    {"error": {"code": "request_too_large", "message": message}},
                     413,
                 )
         except ValueError:
@@ -193,11 +195,54 @@ def create_app(
         )
         if not filename:
             raise VisionError("stockfish_filename", "The engine filename is missing.", 400)
-        content = await request.body()
-        if len(content) > MAX_ENGINE_BYTES:
-            raise VisionError("stockfish_too_large", "Engine files must be 100 MB or smaller.", 413)
         channel = request.headers.get("x-engine-channel", "official19")
-        return await stockfish_work(stockfish.install, filename, content, channel)
+        if channel not in {"official19", "development"}:
+            raise VisionError(
+                "stockfish_channel", "Choose Stockfish 19 or a development build.", 422
+            )
+        if Path(filename).suffix.lower() not in {".exe", ".bin", ""}:
+            raise VisionError(
+                "stockfish_file_type",
+                "Choose the extracted Stockfish executable, not its ZIP file.",
+                400,
+            )
+        if stockfish_pending.locked():
+            raise VisionError(
+                "stockfish_busy", "Stockfish is busy. Wait for the current search to finish.", 429
+            )
+
+        upload_path = None
+        try:
+            stockfish.engine_dir.mkdir(parents=True, exist_ok=True)
+            suffix = ".exe" if os.name == "nt" else Path(filename).suffix.lower()
+            with tempfile.NamedTemporaryFile(
+                prefix=".stockfish-received-",
+                suffix=suffix,
+                dir=stockfish.engine_dir,
+                delete=False,
+            ) as upload:
+                upload_path = Path(upload.name)
+                size = 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_ENGINE_BYTES:
+                        raise VisionError(
+                            "stockfish_too_large",
+                            f"Engine files must be {MAX_ENGINE_SIZE_LABEL} or smaller.",
+                            413,
+                        )
+                    upload.write(chunk)
+            return await stockfish_work(stockfish.install_file, filename, upload_path, channel)
+        except OSError as exc:
+            raise VisionError(
+                "stockfish_storage",
+                "Could not save the engine upload. Check free disk space and write access "
+                "to the ELO Vision folder.",
+                507,
+            ) from exc
+        finally:
+            if upload_path is not None:
+                upload_path.unlink(missing_ok=True)
 
     @app.post("/api/v1/engine/analyze")
     async def stockfish_analyze(data: StockfishInput):
