@@ -376,6 +376,87 @@ def test_browser_identifies_stale_stockfish_backend(page):
     assert page.locator("#stockfish-status").text_content() == "Older ELO Vision server detected"
 
 
+def test_stockfish_results_return_from_cache_when_navigating_back(page):
+    from playwright.sync_api import expect
+
+    engine_requests = []
+
+    def analyze_maia(route):
+        data = json.loads(route.request.post_data)
+        board = chess.Board(data["fen"])
+        matchups = data.get("matchups") or [
+            {"player_elo": rating, "opponent_elo": rating} for rating in data.get("ratings", [1800])
+        ]
+        route.fulfill(
+            json={
+                "predictions": [
+                    {
+                        "player_elo": pair["player_elo"],
+                        "opponent_elo": pair["opponent_elo"],
+                        "moves": [
+                            {
+                                "uci": move.uci(),
+                                "san": board.san(move),
+                                "probability": 1 / board.legal_moves.count(),
+                                "rank": rank,
+                            }
+                            for rank, move in enumerate(board.legal_moves, 1)
+                        ],
+                        "cached": False,
+                        "elapsed_ms": 1,
+                    }
+                    for pair in matchups
+                ]
+            }
+        )
+
+    def analyze_stockfish(route):
+        data = json.loads(route.request.post_data)
+        engine_requests.append(data)
+        board = chess.Board(data["fen"])
+        move = next(iter(board.legal_moves))
+        route.fulfill(
+            json={
+                "engine": "Stockfish 19 cache fixture",
+                "channel": "official19",
+                "depth": data["depth"],
+                "lines": [
+                    {
+                        "rank": 1,
+                        "uci": move.uci(),
+                        "san": board.san(move),
+                        "score_cp": 11 if board.turn else 22,
+                        "mate": None,
+                        "score": "+0.11" if board.turn else "+0.22",
+                        "pv": [board.san(move)],
+                        "depth": data["depth"],
+                    }
+                ],
+            }
+        )
+
+    page.route("**/api/v1/analyze", analyze_maia)
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={"available": True, "name": "Stockfish 19 cache fixture", "channel": "official19"}
+        ),
+    )
+    page.route("**/api/v1/engine/analyze", analyze_stockfish)
+    page.goto(BASE_URL)
+    page.locator("#sample").click()
+    expect(page.locator("#next")).to_be_enabled()
+    page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
+    page.locator("#next").click()
+    page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.22").wait_for()
+    requests_after_searching_both_positions = len(engine_requests)
+    page.locator("#prev").click()
+    page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
+    page.wait_for_timeout(200)
+    assert len(engine_requests) == requests_after_searching_both_positions
+    assert page.locator("#stockfish-results .stockfish-line").count() == 1
+
+
 def test_browser_upload_accepts_150_mib_engine_file(page):
     requested = []
     page.route(

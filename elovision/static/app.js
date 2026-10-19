@@ -20,6 +20,7 @@ const state = {
   maiaMode: "triple",
   ratingPredictions: [],
   stockfishPositionKey: null,
+  stockfishCache: new Map(),
   predictions: [],
   stockfish: null,
   stockfishAvailable: false,
@@ -220,9 +221,9 @@ function capitalize(value) {
 }
 function navigate(ply) {
   if (!state.game) return;
-  clearStockfishResult();
   state.ply = Math.max(0, Math.min(state.game.moves.length, ply));
   state.position = state.game.positions[state.ply];
+  clearStockfishResult();
   renderBoard();
   scheduleAnalysis(100);
 }
@@ -1263,9 +1264,17 @@ $("stockfish-lines-count").addEventListener("change", () => analyzeStockfish(tru
 $("stockfish-hash").addEventListener("change", () => analyzeStockfish(true));
 $("stockfish-threads").addEventListener("change", () => analyzeStockfish(true));
 function clearStockfishResult() {
-  state.stockfish = null;
-  state.stockfishPositionKey = null;
-  $("stockfish-results").replaceChildren();
+  const key = state.position ? stockfishRequestKey() : null;
+  const cached = key ? state.stockfishCache.get(key) : null;
+  if (cached) {
+    state.stockfishCache.delete(key);
+    state.stockfishCache.set(key, cached);
+    showStockfishResult(cached, key, false, false);
+  } else {
+    state.stockfish = null;
+    state.stockfishPositionKey = null;
+    $("stockfish-results").replaceChildren();
+  }
   renderGauges();
   renderMoveArrows();
 }
@@ -1344,6 +1353,24 @@ function renderStockfish(result) {
 function stockfishRequestKey() {
   return `${JSON.stringify(payload())}|${$("stockfish-depth").value}|${$("stockfish-lines-count").value}|${$("stockfish-hash").value}|${$("stockfish-threads").value}`;
 }
+function showStockfishResult(result, key, remember = true, refreshHuman = true) {
+  state.stockfish = result;
+  state.stockfishPositionKey = key;
+  if (remember) {
+    state.stockfishCache.delete(key);
+    state.stockfishCache.set(key, result);
+    while (state.stockfishCache.size > 128)
+      state.stockfishCache.delete(state.stockfishCache.keys().next().value);
+  }
+  stockfishError();
+  renderStockfish(result);
+  if (refreshHuman && state.mode === "dual") {
+    renderPredictions();
+    renderRatingComparisonChart();
+  }
+  renderGauges();
+  renderMoveArrows();
+}
 async function analyzeStockfish(force = false) {
   const hashGb = Number($("stockfish-hash").value);
   const threads = Number($("stockfish-threads").value);
@@ -1363,6 +1390,13 @@ async function analyzeStockfish(force = false) {
   }
   const key = stockfishRequestKey();
   if (!force && key === state.stockfishPositionKey) return;
+  if (!force && state.stockfishCache.has(key)) {
+    const cached = state.stockfishCache.get(key);
+    state.stockfishCache.delete(key);
+    state.stockfishCache.set(key, cached);
+    showStockfishResult(cached, key, false, false);
+    return;
+  }
   const button = $("stockfish-analyze");
   const requestPosition = JSON.stringify(payload());
   const requestDepth = Number($("stockfish-depth").value);
@@ -1381,15 +1415,7 @@ async function analyzeStockfish(force = false) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.error?.code ? `${data.error.code}: ` : ""}${data.error?.message || `Engine request failed (${response.status}).`}`);
     if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv || Number($("stockfish-hash").value) * 1024 !== requestHashMb || Number($("stockfish-threads").value) !== requestThreads) return;
-    state.stockfish = data;
-    state.stockfishPositionKey = key;
-    renderStockfish(data);
-    if (state.mode === "dual") {
-      renderPredictions();
-      renderRatingComparisonChart();
-    }
-    renderGauges();
-    renderMoveArrows();
+    showStockfishResult(data, key);
   } catch (error) {
     if (JSON.stringify(payload()) === requestPosition) {
       engineMessage(error.message);
@@ -1433,6 +1459,7 @@ async function installStockfish(file) {
     state.stockfishAvailable = true;
     state.stockfish = null;
     state.stockfishPositionKey = null;
+    state.stockfishCache.clear();
     $("sf-engine-title").textContent = `${data.name}: Engine Moves`;
     $("stockfish-status").textContent = `${data.name} · ready`;
     $("stockfish-channel").value = data.channel;
@@ -1643,10 +1670,10 @@ $("fen-form").addEventListener("submit", async (event) => {
     const position = await api("position", {
       fen: $("fen-input").value.trim(),
     });
-    clearStockfishResult();
     state.position = position;
     state.game = null;
     state.ply = 0;
+    clearStockfishResult();
     $("game-select").selectedIndex = -1;
     $("notation").replaceChildren(
       node("div", "notation-empty", "Standalone FEN · No game history"),
