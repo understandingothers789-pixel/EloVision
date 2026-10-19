@@ -1511,6 +1511,7 @@ async function analyzeStockfish(force = false) {
 }
 async function installStockfish(file) {
   if (!file) return;
+  const engineWasAvailable = state.stockfishAvailable;
   stockfishError();
   if (file.size > MAX_ENGINE_BYTES) {
     const message = "Choose a Stockfish executable no larger than 512 MiB (about 537 MB).";
@@ -1554,11 +1555,17 @@ async function installStockfish(file) {
     setStockfishChannelLink();
     if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish(true);
   } catch (error) {
-    state.stockfishAvailable = false;
+    // Installation replaces the old binary only after the candidate validates.
+    // Keep the existing engine usable when a replacement upload is rejected.
+    state.stockfishAvailable = engineWasAvailable;
+    $("stockfish-analyze").disabled = !engineWasAvailable;
+    updateWholeGameButton();
     const outdated = error.message.includes("older ELO Vision backend");
     $("stockfish-status").textContent = outdated
       ? "Old server still answering on this address"
-      : "Engine setup needs attention";
+      : engineWasAvailable
+        ? "Current engine remains ready · replacement failed"
+        : "Engine setup needs attention";
     engineMessage(error.message);
     stockfishError(error.message);
   } finally {
@@ -1759,6 +1766,7 @@ $("fen-form").addEventListener("submit", async (event) => {
     state.position = position;
     state.game = null;
     state.ply = 0;
+    updateWholeGameButton();
     clearStockfishResult();
     $("game-select").selectedIndex = -1;
     $("notation").replaceChildren(

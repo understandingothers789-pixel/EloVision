@@ -326,6 +326,11 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#view-dual").click()
     assert "pure-stockfish" not in page.locator("#dual-results").get_attribute("class")
     assert page.locator(".human-column").is_visible()
+    page.locator("#fen-open").click()
+    page.locator("#fen-input").fill(chess.STARTING_FEN)
+    page.get_by_role("button", name="Explore position").click()
+    page.locator("#fen-dialog").wait_for(state="hidden")
+    assert page.locator("#whole-game-analyze").is_disabled()
     page.locator("#stockfish-panel > summary").click()
     assert page.locator("#stockfish-channel").is_visible()
     assert (
@@ -373,6 +378,51 @@ def test_browser_shows_stockfish_install_error_in_engine_setup(page):
     assert page.locator("#stockfish-error").is_visible()
     assert "Choose the build for Windows" in page.locator("#stockfish-error").text_content()
     assert page.locator("#stockfish-panel").evaluate("el => el.open")
+
+
+def test_browser_failed_stockfish_replacement_keeps_existing_engine(page):
+    from playwright.sync_api import expect
+
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={
+                "available": True,
+                "name": "Stockfish 19 existing engine",
+                "channel": "official19",
+            }
+        ),
+    )
+    page.route(
+        "**/api/v1/engine/analyze",
+        lambda route: route.fulfill(
+            json={"engine": "Stockfish 19 existing engine", "depth": 16, "lines": []}
+        ),
+    )
+    page.route(
+        "**/api/v1/engine/install",
+        lambda route: route.fulfill(
+            status=422,
+            json={
+                "error": {
+                    "code": "stockfish_platform",
+                    "message": "The replacement engine is for another platform.",
+                }
+            },
+        ),
+    )
+    page.goto(BASE_URL)
+    expect(page.locator("#stockfish-analyze")).to_be_enabled()
+    page.locator("#stockfish-panel > summary").click()
+    page.locator("#stockfish-file").evaluate(
+        "input => { const transfer = new DataTransfer(); "
+        "transfer.items.add(new File(['engine'], 'stockfish.exe')); "
+        "input.files = transfer.files; "
+        "input.dispatchEvent(new Event('change', { bubbles: true })); }"
+    )
+    page.locator("#stockfish-error").filter(has_text="stockfish_platform:").wait_for()
+    expect(page.locator("#stockfish-analyze")).to_be_enabled()
+    assert "Current engine remains ready" in page.locator("#stockfish-status").text_content()
 
 
 def test_browser_identifies_stale_stockfish_backend(page):
