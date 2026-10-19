@@ -72,7 +72,11 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
         board = chess.Board(data["fen"])
         legal = list(board.legal_moves)
         predictions = []
-        for rating in data["ratings"]:
+        matchups = data.get("matchups") or [
+            {"player_elo": rating, "opponent_elo": rating} for rating in data["ratings"]
+        ]
+        for matchup in matchups:
+            rating = matchup["player_elo"]
             values = [i + rating / 100 for i in range(len(legal))]
             total = sum(values)
             moves = sorted(
@@ -88,7 +92,7 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
                 {
                     "schema_version": "1.0",
                     "player_elo": rating,
-                    "opponent_elo": rating,
+                    "opponent_elo": matchup["opponent_elo"],
                     "moves": moves,
                     "probability_sum": 1,
                     "model": {"id": "browser-test-fixture"},
@@ -100,8 +104,13 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
     page.route("**/api/v1/analyze", fixture)
     page.goto(BASE_URL)
     page.locator(".move-prediction").nth(4).wait_for()
-    assert len(requested) and requested[0]["ratings"] == [1600]
-    page.locator("#move-limit").select_option("all")
+    assert len(requested) and requested[0]["matchups"] == [
+        {"player_elo": 1800, "opponent_elo": 1800}
+    ]
+    page.locator("#view-maia").click()
+    page.locator("#tab-explore").click()
+    page.locator(".move-prediction").nth(4).wait_for()
+    page.locator("#maia-move-limit").select_option("all")
     assert page.locator(".move-prediction").count() == 20
     page.locator("#tab-compare").click()
     page.locator(".compare-table tbody tr").nth(19).wait_for()
@@ -137,14 +146,114 @@ def test_browser_does_not_display_stale_analysis(page):
 
     def fixture(route):
         data = json.loads(route.request.post_data)
-        calls.append(data["ratings"])
-        route.fulfill(status=503, json={"error": {"message": f"Test rating {data['ratings'][0]}"}})
+        rating = data.get("matchups", [{"player_elo": data.get("ratings", [1600])[0]}])[0][
+            "player_elo"
+        ]
+        calls.append(rating)
+        route.fulfill(status=503, json={"error": {"message": f"Test rating {rating}"}})
 
     page.route("**/api/v1/analyze", fixture)
     page.goto(BASE_URL)
-    page.get_by_text("Test rating 1600", exact=True).wait_for()
+    page.get_by_text("Test rating 1800", exact=True).wait_for()
     page.locator("#elo").fill("1000")
     page.locator("#elo").fill("2400")
     page.get_by_text("Test rating 2400", exact=True).wait_for()
     assert not page.get_by_text("Test rating 1000", exact=True).count()
-    assert calls[-1] == [2400]
+    assert calls[-1] == 2400
+
+
+def test_browser_switches_between_dual_and_pure_stockfish_views(page):
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    def fixture(route):
+        data = json.loads(route.request.post_data)
+        board = chess.Board(data["fen"])
+        matchups = data.get("matchups") or [
+            {"player_elo": rating, "opponent_elo": rating} for rating in data["ratings"]
+        ]
+        predictions = []
+        for matchup in matchups:
+            moves = [
+                {
+                    "uci": move.uci(),
+                    "san": board.san(move),
+                    "probability": 1 / board.legal_moves.count(),
+                    "rank": rank,
+                }
+                for rank, move in enumerate(board.legal_moves, 1)
+            ]
+            predictions.append(
+                {
+                    "player_elo": matchup["player_elo"],
+                    "opponent_elo": matchup["opponent_elo"],
+                    "moves": moves,
+                    "cached": False,
+                    "elapsed_ms": 1,
+                }
+            )
+        route.fulfill(json={"predictions": predictions})
+
+    page.route("**/api/v1/analyze", fixture)
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={
+                "available": True,
+                "name": "Stockfish 19 browser fixture",
+                "channel": "official19",
+            }
+        ),
+    )
+    page.route(
+        "**/api/v1/engine/analyze",
+        lambda route: route.fulfill(
+            json={
+                "engine": "Stockfish 19 browser fixture",
+                "channel": "official19",
+                "depth": 16,
+                "lines": [
+                    {
+                        "rank": 1,
+                        "uci": "e2e4",
+                        "san": "e4",
+                        "score_cp": 35,
+                        "mate": None,
+                        "score": "+0.35",
+                        "pv": ["e4", "e5", "Nf3"],
+                        "depth": 16,
+                    },
+                    {
+                        "rank": 2,
+                        "uci": "d2d4",
+                        "san": "d4",
+                        "score_cp": 21,
+                        "mate": None,
+                        "score": "+0.21",
+                        "pv": ["d4", "d5", "c4"],
+                        "depth": 16,
+                    },
+                ],
+            }
+        ),
+    )
+    page.goto(BASE_URL)
+    page.locator("#dual-human-moves .move-prediction").nth(4).wait_for()
+    page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
+    assert page.locator("#dual-results .dual-column").count() == 2
+    assert page.locator("#maia-gauge-marker").text_content().endswith("%")
+    assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
+    assert page.locator(".stockfish-line .engine-pv").first.is_hidden()
+    page.locator("#show-variations").check()
+    assert page.locator(".stockfish-line .engine-pv").first.is_visible()
+    page.locator("#view-stockfish").click()
+    assert "pure-stockfish" in page.locator("#dual-results").get_attribute("class")
+    assert page.locator(".human-column").is_hidden()
+    page.locator("#view-dual").click()
+    assert "pure-stockfish" not in page.locator("#dual-results").get_attribute("class")
+    assert page.locator(".human-column").is_visible()
+    page.locator("#stockfish-panel > summary").click()
+    assert page.locator("#stockfish-channel").is_visible()
+    page.locator("#stockfish-channel").select_option("development")
+    assert "tests.stockfishchess.org" in page.locator("#stockfish-download").get_attribute("href")
+    assert not errors

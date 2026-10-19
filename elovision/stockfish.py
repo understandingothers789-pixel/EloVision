@@ -22,24 +22,48 @@ class StockfishService:
         self.engine_dir = engine_dir
         self._lock = threading.RLock()
         self._engine_path = engine_dir / ("stockfish.exe" if os.name == "nt" else "stockfish")
+        self._channel_path = engine_dir / "channel.json"
         configured = os.environ.get("ELOVISION_STOCKFISH")
+        configured_channel = os.environ.get("ELOVISION_STOCKFISH_CHANNEL")
+        self._channel = configured_channel or "official19"
+        if self._channel not in {"official19", "development"}:
+            self._channel = "official19"
+        if not configured_channel and not configured:
+            try:
+                saved = self._channel_path.read_text(encoding="utf-8").strip()
+                if saved in {"official19", "development"}:
+                    self._channel = saved
+            except OSError:
+                pass
         if configured:
             self._engine_path = Path(configured).expanduser().resolve()
 
-    def _identify(self, path: Path):
+    def _identify(self, path: Path, channel: str | None = None):
+        channel = channel or self._channel
         if not path.is_file():
             raise VisionError(
                 "stockfish_missing",
-                "Choose the Stockfish 19 executable to enable engine analysis.",
+                "Choose a Stockfish executable to enable engine analysis.",
                 503,
             )
         try:
             with chess.engine.SimpleEngine.popen_uci(str(path), timeout=12) as engine:
                 name = engine.id.get("name", "Unknown UCI engine")
-                if not name.lower().startswith("stockfish 19"):
+                lower_name = name.lower()
+                valid_name = (
+                    lower_name.startswith("stockfish 19")
+                    if channel == "official19"
+                    else lower_name.startswith(("stockfish dev", "stockfish development"))
+                )
+                if not valid_name:
+                    expected = (
+                        "Stockfish 19"
+                        if channel == "official19"
+                        else "a Stockfish development build"
+                    )
                     raise VisionError(
                         "stockfish_version",
-                        f"This app expects Stockfish 19; the selected engine identifies as {name}.",
+                        f"This mode expects {expected}; the selected engine identifies as {name}.",
                         422,
                     )
                 return name
@@ -55,7 +79,7 @@ class StockfishService:
             raise VisionError(
                 "stockfish_start",
                 "Stockfish could not start. Choose the extracted "
-                "Stockfish 19 executable for this computer.",
+                "Stockfish executable for this computer.",
                 422,
             ) from exc
 
@@ -64,11 +88,15 @@ class StockfishService:
             name = self._identify(self._engine_path)
         except VisionError as exc:
             if exc.code == "stockfish_missing":
-                return {"available": False, "name": None}
-            return {"available": False, "name": None, "message": str(exc)}
-        return {"available": True, "name": name}
+                return {"available": False, "name": None, "channel": self._channel}
+            return {"available": False, "name": None, "channel": self._channel, "message": str(exc)}
+        return {"available": True, "name": name, "channel": self._channel}
 
-    def install(self, filename: str, content: bytes):
+    def install(self, filename: str, content: bytes, channel: str = "official19"):
+        if channel not in {"official19", "development"}:
+            raise VisionError(
+                "stockfish_channel", "Choose Stockfish 19 or a development build.", 422
+            )
         if not content:
             raise VisionError("stockfish_empty", "The selected engine file is empty.", 400)
         if len(content) > MAX_ENGINE_BYTES:
@@ -89,26 +117,31 @@ class StockfishService:
                 temporary.write_bytes(content)
                 if os.name != "nt":
                     temporary.chmod(0o700)
-                name = self._identify(temporary)
+                name = self._identify(temporary, channel)
                 os.replace(temporary, destination)
                 if os.name != "nt":
                     destination.chmod(0o700)
+                channel_temporary = self._channel_path.with_suffix(".tmp")
+                channel_temporary.write_text(channel, encoding="utf-8")
+                os.replace(channel_temporary, self._channel_path)
             finally:
                 temporary.unlink(missing_ok=True)
         self._engine_path = destination
-        return {"available": True, "name": name}
+        self._channel = channel
+        return {"available": True, "name": name, "channel": channel}
 
     def analyze(self, request: PredictionRequest, depth: int = 16, multipv: int = 5):
         if not 10 <= depth <= 22:
             raise VisionError("stockfish_depth", "Choose a search depth between 10 and 22.", 422)
-        if not 1 <= multipv <= 5:
+        if not 1 <= multipv <= 12:
             raise VisionError(
-                "stockfish_multipv", "Request between one and five engine lines.", 422
+                "stockfish_multipv", "Request between one and twelve engine lines.", 422
             )
         board = replay_position(request.fen, request.initial_fen, list(request.moves))
         if not board.legal_moves.count():
             return {
                 "engine": self._identify(self._engine_path),
+                "channel": self._channel,
                 "side_to_move": "white" if board.turn else "black",
                 "depth": depth,
                 "lines": [],
@@ -125,10 +158,21 @@ class StockfishService:
                     str(self._engine_path), timeout=90
                 ) as engine:
                     name = engine.id.get("name", "Unknown UCI engine")
-                    if not name.lower().startswith("stockfish 19"):
+                    lower_name = name.lower()
+                    valid_name = (
+                        lower_name.startswith("stockfish 19")
+                        if self._channel == "official19"
+                        else lower_name.startswith(("stockfish dev", "stockfish development"))
+                    )
+                    if not valid_name:
+                        expected = (
+                            "Stockfish 19"
+                            if self._channel == "official19"
+                            else "a Stockfish development build"
+                        )
                         raise VisionError(
                             "stockfish_version",
-                            "This app expects Stockfish 19; the selected engine identifies "
+                            f"This mode expects {expected}; the selected engine identifies "
                             f"as {name}.",
                             422,
                         )
@@ -195,6 +239,7 @@ class StockfishService:
             )
         return {
             "engine": name,
+            "channel": self._channel,
             "side_to_move": "white" if board.turn else "black",
             "depth": max((line["depth"] for line in lines), default=depth),
             "lines": lines,

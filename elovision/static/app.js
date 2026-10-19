@@ -12,7 +12,10 @@ const state = {
   ply: 0,
   position: null,
   flipped: false,
-  mode: "explore",
+  mode: "dual",
+  maiaMode: "triple",
+  ratingPredictions: [],
+  stockfishPositionKey: null,
   predictions: [],
   stockfish: null,
   stockfishAvailable: false,
@@ -96,6 +99,13 @@ function selectedRatings() {
   return [Number($("elo").value)];
 }
 function selectedMatchups() {
+  if (["dual", "explore"].includes(state.mode)) {
+    const player = Number($("elo").value);
+    const opponent = $("dual-equal").checked
+      ? player
+      : Number($("dual-opponent-elo").value);
+    return [{ player_elo: player, opponent_elo: opponent }];
+  }
   if (state.mode !== "triple") return undefined;
   const equal = $("equal-opponents").checked;
   return state.ratingValues.map((rating, i) => ({
@@ -189,7 +199,8 @@ function renderBoard() {
   document
     .querySelector(".move-button.selected")
     ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  if (state.mode === "triple" && state.predictions.length)
+  renderGauges();
+  if (state.predictions.length || state.stockfish?.lines?.length)
     renderMoveArrows(state.predictions);
 }
 function capitalize(value) {
@@ -281,17 +292,36 @@ function scheduleAnalysis(delay = 0) {
   const revision = ++state.revision;
   clearTimeout(state.timer);
   state.controller?.abort();
+  state.chartController?.abort();
   state.predictions = [];
-  $("move-arrows").replaceChildren();
-  $("move-arrows").hidden = true;
+  if (state.mode === "dual") {
+    state.ratingPredictions = [];
+    $("rating-comparison-chart").replaceChildren(
+      node("span", "stockfish-loading", "Updating rating comparison…"),
+    );
+  }
+  $("dual-human-moves").replaceChildren(node("div", "stockfish-loading", "Waiting for Maia analysis…"));
   $("results").replaceChildren();
   $("actual-card").hidden = true;
+  $("dual-actual-card").hidden = true;
   $("spectrum-chart").hidden = true;
   $("export-json").disabled = $("export-csv").disabled = true;
-  $("loading").hidden = false;
+  renderGauges();
+  if (state.mode === "stockfish") {
+    $("loading").hidden = true;
+    $("analysis-indicator").textContent = state.stockfishAvailable ? "STOCKFISH" : "ENGINE NEEDED";
+    if (state.stockfishAvailable) state.timer = setTimeout(() => analyzeStockfish(), delay);
+    else engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
+    return;
+  }
+  $("loading").hidden = state.mode === "dual";
   $("analysis-indicator").textContent = "ANALYZING";
   $("probability-total").textContent = "Full legal policy · No sampling";
-  state.timer = setTimeout(() => analyze(revision), delay);
+  state.timer = setTimeout(() => {
+    analyze(revision);
+    if (state.mode === "dual" && state.stockfishAvailable && !state.stockfish)
+      analyzeStockfish();
+  }, delay);
 }
 async function analyze(revision) {
   const controller = new AbortController();
@@ -312,6 +342,7 @@ async function analyze(revision) {
       ? "CACHED"
       : "MAIA 3";
     $("model-status").textContent = "Ready · CPU · Offline";
+    if (state.mode === "dual") loadRatingComparisonChart(revision);
   } catch (error) {
     if (revision !== state.revision || error.name === "AbortError") return;
     const empty = node("div", "empty-state");
@@ -326,7 +357,7 @@ async function analyze(revision) {
       ),
       node("p", "", error.message),
     );
-    $("results").replaceChildren(empty);
+    $(state.mode === "dual" ? "dual-human-moves" : "results").replaceChildren(empty);
     $("analysis-indicator").textContent = preview ? "PREVIEW" : "UNAVAILABLE";
     $("model-status").textContent = preview
       ? "Interface preview · No backend"
@@ -336,10 +367,10 @@ async function analyze(revision) {
   }
 }
 const pct = (p) => `${(p * 100).toFixed(2)}%`;
-function limitRows(rows) {
-  return $("move-limit").value === "all"
+function limitRows(rows, selector = "maia-move-limit") {
+  return $(selector).value === "all"
     ? rows
-    : rows.slice(0, Number($("move-limit").value));
+    : rows.slice(0, Number($(selector).value));
 }
 function renderPredictions() {
   const predictions = state.predictions;
@@ -362,14 +393,23 @@ function renderPredictions() {
         "There is no next-move probability distribution in this position.",
       ),
     );
-    container.append(empty);
+    const resultContainer = state.mode === "dual" ? $("dual-human-moves") : container;
+    resultContainer.replaceChildren(empty);
     $("probability-total").textContent = "No legal moves";
+    renderGauges();
     return;
   }
-  if (state.mode === "triple") renderTriple(container, predictions);
+  if (state.mode === "dual") {
+    $("dual-human-moves").replaceChildren();
+    renderExplore($("dual-human-moves"), predictions[0], "move-limit", "dual-actual-card");
+    $("human-model-rating").textContent = `${predictions[0].player_elo} Elo`;
+    renderMoveArrows(predictions);
+  }
+  else if (state.mode === "triple") renderTriple(container, predictions);
   else if (state.mode === "explore") renderExplore(container, predictions[0]);
   else if (state.mode === "compare") renderCompare(container, predictions);
   else renderSpectrum(container, predictions);
+  renderGauges();
   const elapsed = Math.max(...predictions.map((p) => p.elapsed_ms || 0));
   const cached = predictions.every((p) => p.cached);
   $("probability-total").textContent =
@@ -378,12 +418,13 @@ function renderPredictions() {
     ? "Using the PGN mainline, including up to seven previous positions. Short history is padded exactly as in the official Maia pipeline."
     : "No PGN history supplied. The current position is repeated to fill the eight-position model input.";
 }
-function renderExplore(container, prediction) {
+function renderExplore(container, prediction, limitId = "maia-move-limit", actualId = "actual-card") {
+  $(actualId).hidden = true;
   const actual = prediction.moves.find(
     (m) => m.uci === state.position.actual_move,
   );
   if (actual) {
-    const card = $("actual-card");
+    const card = $(actualId);
     card.replaceChildren(
       node("span", "", "Played in game: "),
       node("strong", "", actual.san),
@@ -395,7 +436,7 @@ function renderExplore(container, prediction) {
     );
     card.hidden = false;
   }
-  for (const move of limitRows(prediction.moves)) {
+  for (const move of limitRows(prediction.moves, limitId)) {
     const row = node("div", "move-prediction");
     row.dataset.uci = move.uci;
     const label = node("div", "prediction-label");
@@ -427,7 +468,7 @@ function renderTriple(container, predictions) {
     swatch.style.backgroundColor = color;
     heading.append(swatch, node("span", "", `${rating} vs. ${prediction.opponent_elo}`));
     card.append(heading);
-    for (const move of limitRows(prediction.moves)) {
+    for (const move of limitRows(prediction.moves, "maia-move-limit")) {
       const row = node("div", "triple-move");
       row.append(node("span", "prediction-rank", String(move.rank).padStart(2, "0")), node("strong", "", move.san), node("span", "", pct(move.probability)));
       const track = node("div", "probability-track");
@@ -447,11 +488,53 @@ function eloColor(rating) {
   const ratio = (rating - 400) / 2600;
   return `hsl(${Math.round(30 + ratio * 180)} 72% 61%)`;
 }
-function renderMoveArrows(predictions) {
+function renderGauges() {
+  const human = state.predictions?.[0]?.moves?.[0];
+  const humanFill = $("maia-gauge-fill");
+  const humanMarker = $("maia-gauge-marker");
+  if (human) {
+    const percent = human.probability * 100;
+    humanFill.style.height = `${percent}%`;
+    humanMarker.textContent = `${percent.toFixed(1)}%`;
+    humanMarker.style.top = `${100 - percent}%`;
+  } else {
+    humanFill.style.height = "0%";
+    humanMarker.textContent = "—";
+    humanMarker.style.top = "100%";
+  }
+  const best = state.stockfish?.lines?.[0];
+  const fill = $("sf-gauge-fill");
+  const marker = $("sf-gauge-marker");
+  if (!best) {
+    fill.style.height = "0%";
+    fill.style.top = "auto";
+    fill.style.bottom = "50%";
+    marker.textContent = "—";
+    marker.style.top = "50%";
+    return;
+  }
+  const mate = best.mate;
+  const cp = mate === null || mate === undefined ? Number(best.score_cp || 0) : Math.sign(mate || 1) * 400;
+  const bounded = Math.max(-400, Math.min(400, cp));
+  const percent = Math.abs(bounded) / 800 * 100;
+  if (bounded >= 0) {
+    fill.style.top = "auto";
+    fill.style.bottom = "50%";
+  } else {
+    fill.style.bottom = "auto";
+    fill.style.top = "50%";
+  }
+  fill.style.height = `${percent}%`;
+  marker.textContent = mate ? (mate > 0 ? `M${mate}` : `−M${Math.abs(mate)}`) : best.score;
+  marker.style.top = `${100 - (bounded + 400) / 8}%`;
+}
+function renderMoveArrows(predictions = state.predictions) {
   const svg = $("move-arrows");
   svg.replaceChildren();
-  svg.hidden = state.mode !== "triple" || !predictions.length;
-  if (svg.hidden || !predictions[0].moves.length) return;
+  const showMaia = ["dual", "triple"].includes(state.mode) && predictions?.length;
+  const showEngine = ["dual", "stockfish", "triple"].includes(state.mode) && state.stockfish?.lines?.length;
+  svg.hidden = !showMaia && !showEngine && !state.position?.actual_move;
+  if (svg.hidden) return;
   const ns = "http://www.w3.org/2000/svg";
   const make = (tag, attrs = {}) => {
     const el = document.createElementNS(ns, tag);
@@ -459,47 +542,49 @@ function renderMoveArrows(predictions) {
     return el;
   };
   const defs = make("defs");
-  const marker = make("marker", { id: "move-arrowhead", viewBox: "0 0 10 10", refX: "8", refY: "5", markerWidth: "4", markerHeight: "4", orient: "auto-start-reverse" });
-  marker.append(make("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "context-stroke" }));
-  defs.append(marker);
-  const engineMarker = make("marker", { id: "engine-arrowhead", viewBox: "0 0 10 10", refX: "8", refY: "5", markerWidth: "4", markerHeight: "4", orient: "auto" });
-  engineMarker.append(make("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#fff0a3" }));
-  defs.append(engineMarker);
+  for (const [id, fill] of [["maia-arrowhead", "context-stroke"], ["engine-arrowhead", "context-stroke"], ["played-arrowhead", "context-stroke"]]) {
+    const marker = make("marker", { id, viewBox: "0 0 10 10", refX: "8", refY: "5", markerWidth: "4", markerHeight: "4", orient: "auto" });
+    marker.append(make("path", { d: "M 0 0 L 10 5 L 0 10 z", fill }));
+    defs.append(marker);
+  }
   svg.append(defs);
-  const byElo = [...predictions].sort((a, b) => a.player_elo - b.player_elo);
-  for (const prediction of byElo) {
-    for (const move of prediction.moves.slice(0, 5)) {
-      const squarePoint = (square) => {
-        const file = square.charCodeAt(0) - 97;
-        const rank = Number(square[1]);
-        return state.flipped ? [7 - file + .5, rank - .5] : [file + .5, 8 - rank + .5];
-      };
-      const [x1, y1] = squarePoint(move.uci.slice(0, 2));
-      const [x2, y2] = squarePoint(move.uci.slice(2, 4));
-      const color = eloColor(prediction.player_elo);
-      const line = make("line", { x1, y1, x2, y2, stroke: color, "stroke-width": "0.12", "stroke-linecap": "round", "marker-end": "url(#move-arrowhead)", opacity: ".9" });
-      const title = make("title");
-      title.textContent = `${prediction.player_elo} vs. ${prediction.opponent_elo}: ${move.san} ${pct(move.probability)}`;
-      line.append(title);
-      svg.append(line, make("circle", { cx: x2, cy: y2, r: ".13", fill: color, stroke: "#142019", "stroke-width": ".035" }));
-    }
-  }
-  const engineMove = state.stockfish?.lines?.[0];
-  if (engineMove?.uci) {
-    const point = (square) => {
-      const file = square.charCodeAt(0) - 97;
-      const rank = Number(square[1]);
-      return state.flipped ? [7 - file + .5, rank - .5] : [file + .5, 8 - rank + .5];
-    };
-    const [x1, y1] = point(engineMove.uci.slice(0, 2));
-    const [x2, y2] = point(engineMove.uci.slice(2, 4));
-    const engineLine = make("line", { x1, y1, x2, y2, stroke: "#fff0a3", "stroke-width": ".075", "stroke-dasharray": ".18 .09", "stroke-linecap": "round", "marker-end": "url(#engine-arrowhead)" });
+  const point = (square) => {
+    const file = square.charCodeAt(0) - 97;
+    const rank = Number(square[1]);
+    return state.flipped ? [7 - file + .5, rank - .5] : [file + .5, 8 - rank + .5];
+  };
+  const appendArrow = (uci, color, label, markerId, width = ".12", opacity = ".86", dashed = false) => {
+    if (!uci || uci.length < 4) return;
+    const [x1, y1] = point(uci.slice(0, 2));
+    const [x2, y2] = point(uci.slice(2, 4));
+    const attrs = { x1, y1, x2, y2, stroke: color, "stroke-width": width, "stroke-linecap": "round", "marker-end": `url(#${markerId})`, opacity };
+    if (dashed) attrs["stroke-dasharray"] = ".2 .1";
+    const line = make("line", attrs);
     const title = make("title");
-    title.textContent = `Stockfish 19 best move: ${engineMove.san} (${engineMove.score} for White)`;
-    engineLine.append(title);
-    svg.append(engineLine, make("circle", { cx: x2, cy: y2, r: ".19", fill: "none", stroke: "#fff0a3", "stroke-width": ".055" }));
+    title.textContent = label;
+    line.append(title);
+    svg.append(line, make("circle", { cx: x2, cy: y2, r: ".13", fill: color, stroke: "#142019", "stroke-width": ".035", opacity }));
+  };
+  if (showMaia && state.mode === "triple") {
+    for (const prediction of [...predictions].sort((a, b) => a.player_elo - b.player_elo)) {
+      for (const move of prediction.moves.slice(0, 5))
+        appendArrow(move.uci, eloColor(prediction.player_elo), `${prediction.player_elo} Elo: ${move.san} ${pct(move.probability)}`, "maia-arrowhead", ".105", ".8");
+    }
+  } else if (showMaia && state.mode === "dual") {
+    const count = $("move-limit").value === "all" ? predictions[0].moves.length : Number($("move-limit").value);
+    for (const move of predictions[0].moves.slice(0, count))
+      appendArrow(move.uci, "#ef726b", `Maia ${predictions[0].player_elo}: ${move.san} ${pct(move.probability)}`, "maia-arrowhead", ".12", ".82");
   }
+  if (showEngine) {
+    const count = Number($("stockfish-lines-count").value);
+    const colors = ["#67aaff", "#78b2fa", "#8dbafa", "#a4c6f5", "#bdd3f4", "#d3e0f3", "#adc7e4", "#9ab8dc", "#86a9d4", "#739bc9", "#618dc0", "#527eaf"];
+    for (const line of state.stockfish.lines.slice(0, count))
+      appendArrow(line.uci, colors[Math.min(line.rank - 1, colors.length - 1)], `Stockfish ${line.rank}: ${line.san} (${line.score} White eval)`, "engine-arrowhead", line.rank === 1 ? ".12" : ".095", line.rank === 1 ? ".95" : ".72");
+  }
+  const played = state.position?.actual_move;
+  if (played) appendArrow(played, "#e9c85e", `Played in game: ${played}`, "played-arrowhead", ".14", ".98", true);
 }
+
 function createTable(headers, spectrum = false) {
   const wrap = node("div", "table-scroll");
   const table = node(
@@ -688,16 +773,93 @@ function renderChart() {
   }
   $("chart").replaceChildren(svg);
 }
+async function loadRatingComparisonChart(revision) {
+  if (preview || state.mode !== "dual") return;
+  const controller = new AbortController();
+  state.chartController = controller;
+  $("rating-comparison-chart").replaceChildren(
+    node("span", "stockfish-loading", "Calculating move probabilities across ratings…"),
+  );
+  try {
+    const result = await api("analyze", { ...payload(), ratings: RATINGS }, controller.signal);
+    if (revision !== state.revision || state.mode !== "dual") return;
+    state.ratingPredictions = result.predictions;
+    renderRatingComparisonChart();
+  } catch (error) {
+    if (error.name === "AbortError" || revision !== state.revision) return;
+    $("rating-comparison-chart").replaceChildren(
+      node("span", "stockfish-loading", `Rating chart unavailable: ${error.message}`),
+    );
+  }
+}
+function renderRatingComparisonChart() {
+  const predictions = state.ratingPredictions;
+  if (!predictions?.length) return;
+  const currentRating = Number($("elo").value);
+  const nearest = [...predictions].sort((a, b) => Math.abs(a.player_elo - currentRating) - Math.abs(b.player_elo - currentRating))[0];
+  const moves = nearest.moves.slice(0, 5);
+  if (!moves.length) return;
+  const ns = "http://www.w3.org/2000/svg";
+  const make = (tag, attrs = {}, text) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+    if (text !== undefined) el.textContent = text;
+    return el;
+  };
+  const svg = make("svg", { viewBox: "0 0 360 190", role: "img", "aria-label": "Maia human-move probabilities across ratings" });
+  const colors = ["#f07870", "#69c978", "#70a9ff", "#efb358", "#b88bf0"];
+  const series = moves.map((move, index) => ({
+    move,
+    color: colors[index],
+    values: predictions.map((prediction) => ({
+      rating: prediction.player_elo,
+      probability: prediction.moves.find((candidate) => candidate.uci === move.uci)?.probability || 0,
+    })),
+  }));
+  const maximum = Math.max(0.1, ...series.flatMap((item) => item.values.map((point) => point.probability)));
+  const maxTick = Math.min(1, Math.ceil(maximum * 10) / 10);
+  const x = (rating) => 34 + ((rating - 400) / 2600) * 316;
+  const y = (probability) => 145 - probability / maxTick * 112;
+  for (const tick of [0, maxTick / 2, maxTick]) {
+    svg.append(make("line", { x1: 34, x2: 352, y1: y(tick), y2: y(tick), class: "rating-chart-grid" }));
+    svg.append(make("text", { x: 29, y: y(tick) + 3, "text-anchor": "end", class: "rating-chart-axis" }, `${Math.round(tick * 100)}%`));
+  }
+  for (const rating of [400, 1000, 1600, 2200, 3000])
+    svg.append(make("text", { x: x(rating), y: 161, "text-anchor": "middle", class: "rating-chart-axis" }, String(rating)));
+  series.forEach((item, seriesIndex) => {
+    const d = item.values.map((point, index) => `${index ? "L" : "M"} ${x(point.rating)} ${y(point.probability)}`).join(" ");
+    svg.append(make("path", { d, class: "rating-chart-line", stroke: item.color }));
+    item.values.forEach((point) => svg.append(make("circle", { cx: x(point.rating), cy: y(point.probability), r: "2.2", fill: item.color, class: "rating-chart-dot" })));
+    const legendX = 40 + seriesIndex * 63;
+    svg.append(make("text", { x: legendX, y: 12, class: "rating-chart-legend", fill: item.color }, item.move.san));
+  });
+  $("rating-comparison-chart").replaceChildren(svg);
+}
 function setMode(mode) {
   state.mode = mode;
-  document.querySelectorAll(".tab").forEach((tab) => {
-    const active = tab.dataset.mode === mode;
+  if (!["dual", "stockfish"].includes(mode)) state.maiaMode = mode;
+  const view = mode === "dual" ? "dual" : mode === "stockfish" ? "stockfish" : "maia";
+  document.querySelectorAll(".view-tab").forEach((tab) => {
+    const active = tab.dataset.view === view;
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", String(active));
   });
-  document.querySelector(".rating-control").hidden = mode !== "explore";
+  document.querySelectorAll(".tab").forEach((tab) => {
+    const active = view === "maia" && tab.dataset.mode === mode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  $("maia-tabs").hidden = view !== "maia";
+  $("dual-view").hidden = view === "maia";
+  $("maia-view").hidden = view !== "maia";
+  $("dual-results").classList.toggle("pure-stockfish", view === "stockfish");
+  document.querySelector(".dual-toolbar").classList.toggle("pure-stockfish", view === "stockfish");
+  $("rating-control").hidden = mode === "stockfish" || mode === "triple" || mode === "compare" || mode === "spectrum";
+  $("triple-controls").hidden = mode !== "triple";
   $("compare-controls").hidden = mode !== "compare";
   $("limit-label").hidden = mode === "spectrum";
+  $("rating-comparison-chart").closest(".rating-chart-panel").hidden = view !== "dual";
+  $("analysis-indicator").textContent = view === "stockfish" ? "STOCKFISH" : view === "dual" ? "MAIA + SF" : "MAIA 3";
   $("results-title").textContent = {
     triple: "Top moves by rating",
     explore: "Predicted moves",
@@ -710,8 +872,12 @@ function setMode(mode) {
     compare: "Each rating faces an equal-rated opponent",
     spectrum: "14 linked rating groups · Scroll to explore",
   }[mode];
-  if (mode !== "triple") $("move-arrows").hidden = true;
   scheduleAnalysis();
+}
+function setView(view) {
+  if (view === "dual") setMode("dual");
+  else if (view === "stockfish") setMode("stockfish");
+  else setMode(state.maiaMode || "triple");
 }
 async function exportResults(format) {
   const button = $("export-" + format);
@@ -758,32 +924,74 @@ for (const id of ["rating-a", "rating-b"]) {
 }
 $("elo").addEventListener("input", () => {
   $("elo-value").textContent = $("elo").value;
-  $("matchup").textContent = `${$("elo").value} vs. ${$("elo").value}`;
+  if ($("dual-equal").checked) $("dual-opponent-elo").value = $("elo").value;
+  $("matchup").textContent = `${$("elo").value} vs. ${$("dual-equal").checked ? $("elo").value : $("dual-opponent-elo").value}`;
+  $("human-model-rating").textContent = `${$("elo").value} Elo`;
   scheduleAnalysis(200);
 });
-document
-  .querySelectorAll(".tab")
-  .forEach((tab) =>
-    tab.addEventListener("click", () => setMode(tab.dataset.mode)),
-  );
-$("move-limit").addEventListener("change", renderPredictions);
+$("dual-equal").addEventListener("change", () => {
+  const equal = $("dual-equal").checked;
+  if (equal) $("dual-opponent-elo").value = $("elo").value;
+  $("dual-opponent-elo").disabled = equal;
+  $("matchup").textContent = `${$("elo").value} vs. ${equal ? $("elo").value : $("dual-opponent-elo").value}`;
+  scheduleAnalysis(100);
+});
+$("dual-opponent-elo").addEventListener("change", () => {
+  const value = Math.max(400, Math.min(3000, Math.round(Number($("dual-opponent-elo").value) / 100) * 100));
+  $("dual-opponent-elo").value = value;
+  $("matchup").textContent = `${$("elo").value} vs. ${value}`;
+  scheduleAnalysis(100);
+});
+document.querySelectorAll(".tab").forEach((tab) =>
+  tab.addEventListener("click", () => setMode(tab.dataset.mode)),
+);
+document.querySelectorAll(".view-tab").forEach((tab) =>
+  tab.addEventListener("click", () => setView(tab.dataset.view)),
+);
+$("move-limit").addEventListener("change", () => {
+  renderPredictions();
+  renderMoveArrows();
+});
+$("maia-move-limit").addEventListener("change", renderPredictions);
+$("show-variations").addEventListener("change", () => {
+  $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked);
+});
+$("stockfish-depth").addEventListener("change", () => analyzeStockfish(true));
+$("stockfish-lines-count").addEventListener("change", () => analyzeStockfish(true));
 function clearStockfishResult() {
   state.stockfish = null;
+  state.stockfishPositionKey = null;
   $("stockfish-results").replaceChildren();
+  renderGauges();
+  renderMoveArrows();
 }
 function engineMessage(message, className = "") {
   const line = node("div", `stockfish-loading${className ? ` ${className}` : ""}`, message);
   $("stockfish-results").replaceChildren(line);
 }
+function setStockfishChannelLink() {
+  const development = $("stockfish-channel").value === "development";
+  const link = $("stockfish-download");
+  link.href = development ? "https://tests.stockfishchess.org/" : "https://stockfishchess.org/download/";
+  link.textContent = development ? "Get development builds ↗" : "Download Stockfish 19 ↗";
+}
+$("stockfish-channel").addEventListener("change", setStockfishChannelLink);
 async function refreshStockfishStatus() {
   try {
     const result = await api("engine/status");
     state.stockfishAvailable = Boolean(result.available);
+    if (result.available && result.channel) $("stockfish-channel").value = result.channel;
     $("stockfish-status").textContent = result.available
       ? `${result.name} · ready`
-      : result.message || "Not installed · choose the Stockfish 19 executable";
+      : result.message || "Not installed · choose an engine executable";
+    $("sf-engine-title").textContent = result.available
+      ? `${result.name} · Engine moves`
+      : "Stockfish · Engine moves";
     $("stockfish-analyze").disabled = !result.available;
     if (result.message) $("stockfish-status").title = result.message;
+    setStockfishChannelLink();
+    if (result.available && state.position && ["dual", "stockfish"].includes(state.mode))
+      analyzeStockfish();
   } catch (error) {
     state.stockfishAvailable = false;
     $("stockfish-status").textContent = "Stockfish is unavailable";
@@ -793,6 +1001,8 @@ async function refreshStockfishStatus() {
 function renderStockfish(result) {
   const container = $("stockfish-results");
   container.replaceChildren();
+  container.classList.toggle("show-variations", $("show-variations").checked);
+  $("sf-engine-title").textContent = `${result.engine} · Engine moves`;
   if (!result.lines.length) {
     container.append(node("div", "stockfish-loading", "This position has no legal moves."));
     return;
@@ -808,11 +1018,21 @@ function renderStockfish(result) {
     container.append(row);
   }
 }
-async function analyzeStockfish() {
+function stockfishRequestKey() {
+  return `${JSON.stringify(payload())}|${$("stockfish-depth").value}|${$("stockfish-lines-count").value}`;
+}
+async function analyzeStockfish(force = false) {
+  if (!state.position || !state.stockfishAvailable) {
+    if (state.mode === "stockfish") engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
+    return;
+  }
+  const key = stockfishRequestKey();
+  if (!force && key === state.stockfishPositionKey) return;
   const button = $("stockfish-analyze");
   const requestPosition = JSON.stringify(payload());
   const requestDepth = Number($("stockfish-depth").value);
-  const requestPayload = { ...payload(), depth: requestDepth, multipv: 5 };
+  const requestMultiPv = Number($("stockfish-lines-count").value);
+  const requestPayload = { ...payload(), depth: requestDepth, multipv: requestMultiPv };
   button.disabled = true;
   engineMessage("Stockfish is searching this position…");
   try {
@@ -823,10 +1043,12 @@ async function analyzeStockfish() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
-    if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth) return;
+    if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv) return;
     state.stockfish = data;
+    state.stockfishPositionKey = key;
     renderStockfish(data);
-    if (state.predictions.length) renderMoveArrows(state.predictions);
+    renderGauges();
+    renderMoveArrows();
   } catch (error) {
     if (JSON.stringify(payload()) === requestPosition) engineMessage(error.message);
   } finally {
@@ -839,20 +1061,27 @@ async function installStockfish(file) {
     engineMessage("Choose a Stockfish executable no larger than 100 MB.");
     return;
   }
+  const channel = $("stockfish-channel").value;
   $("stockfish-choose").disabled = true;
-  $("stockfish-status").textContent = "Checking Stockfish 19…";
+  $("stockfish-status").textContent = channel === "official19" ? "Checking Stockfish 19…" : "Checking development build…";
   try {
     const response = await fetch(localUrl("api/v1/engine/install"), {
       method: "POST",
-      headers: { "Content-Type": "application/octet-stream", "X-Engine-Filename": encodeURIComponent(file.name) },
+      headers: { "Content-Type": "application/octet-stream", "X-Engine-Filename": encodeURIComponent(file.name), "X-Engine-Channel": channel },
       body: file,
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || `Engine install failed (${response.status}).`);
     state.stockfishAvailable = true;
+    state.stockfish = null;
+    state.stockfishPositionKey = null;
+    $("sf-engine-title").textContent = `${data.name} · Engine moves`;
     $("stockfish-status").textContent = `${data.name} · ready`;
+    $("stockfish-channel").value = data.channel;
     $("stockfish-analyze").disabled = false;
-    engineMessage("Stockfish 19 is ready. Analyze the current position whenever you like.");
+    engineMessage(`${data.name} is ready.`);
+    setStockfishChannelLink();
+    if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish(true);
   } catch (error) {
     state.stockfishAvailable = false;
     $("stockfish-status").textContent = "Engine setup needs attention";
@@ -862,6 +1091,9 @@ async function installStockfish(file) {
     $("stockfish-file").value = "";
   }
 }
+$("stockfish-analyze").addEventListener("click", () => analyzeStockfish(true));
+$("stockfish-choose").addEventListener("click", () => $("stockfish-file").click());
+$("stockfish-file").addEventListener("change", (event) => installStockfish(event.target.files[0]));
 function generatedRatings(count, requestedSpacing) {
   if (count === 1) {
     $("spacing-note").textContent = "Single rating centered on 1800; edit it below.";
@@ -948,9 +1180,6 @@ $("chart-move").addEventListener("change", () => {
   renderChart();
 });
 $("retry").addEventListener("click", () => scheduleAnalysis());
-$("stockfish-analyze").addEventListener("click", analyzeStockfish);
-$("stockfish-choose").addEventListener("click", () => $("stockfish-file").click());
-$("stockfish-file").addEventListener("change", (event) => installStockfish(event.target.files[0]));
 $("flip").addEventListener("click", () => {
   state.flipped = !state.flipped;
   renderBoard();

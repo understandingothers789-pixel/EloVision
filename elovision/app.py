@@ -67,7 +67,7 @@ class PgnInput(BaseModel):
 
 class StockfishInput(PositionInput):
     depth: int = Field(default=16, ge=10, le=22)
-    multipv: int = Field(default=5, ge=1, le=5)
+    multipv: int = Field(default=5, ge=1, le=12)
 
 
 def create_app(
@@ -196,7 +196,8 @@ def create_app(
         content = await request.body()
         if len(content) > MAX_ENGINE_BYTES:
             raise VisionError("stockfish_too_large", "Engine files must be 100 MB or smaller.", 413)
-        return await stockfish_work(stockfish.install, filename, content)
+        channel = request.headers.get("x-engine-channel", "official19")
+        return await stockfish_work(stockfish.install, filename, content, channel)
 
     @app.post("/api/v1/engine/analyze")
     async def stockfish_analyze(data: StockfishInput):

@@ -33,7 +33,7 @@ The recommended initial device is **CPU**, including on the Ryzen 7 9800X3D / RX
 - One to eight side-by-side rating predictions. Generate ratings around 1800 using 100, 200, 400, or custom spacing, then edit each Elo directly. The default set is 1400, 1800, 2200.
 - Each rating column shows the top five moves with a shared all-moves option.
 - Top move arrows on the board use Elo colors; higher Elo arrows appear on top when moves overlap.
-- Optional Stockfish 19 analysis displays its best lines, principal variations, and evaluations next to Maia's human-choice probabilities. Install the official engine from the Stockfish panel; see [Stockfish setup](docs/STOCKFISH.md).
+- Optional Stockfish 19 or user-supplied Stockfish development analysis can be paired beside Maia human-move probabilities or used in an engine-only view. The board shows separate Maia probability and Stockfish evaluation gauges, with optional principal variations; see [Stockfish setup](docs/STOCKFISH.md).
 - Edit player and opponent ratings independently in 100-point steps, or link equal-rated opponents.
 - Explore nine bundled sample games and studies, including the Opera, Immortal, and Evergreen games.
 - Single-rating exploration, two-rating comparison with signed percentage-point differences and five sorting options, and the full 14-rating spectrum.

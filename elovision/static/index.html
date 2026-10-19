@@ -42,7 +42,43 @@
       </div>
       <div id="alert" class="alert" role="alert" hidden></div>
       <div class="workspace">
-        <div class="board-column">
+        <section class="game-panel panel" aria-label="Game notation">
+          <div class="panel-heading">
+            <h2>Game notebook</h2>
+            <span id="game-count" class="count">PGN</span>
+          </div>
+          <div class="game-select-wrap">
+            <label for="game-select" class="sr-only">Select imported game</label
+            ><select id="game-select" disabled>
+              <option>No game imported</option>
+            </select>
+          </div>
+          <div class="sample-select-wrap">
+            <label for="sample-game-select">Sample library</label>
+            <select id="sample-game-select"><option>Loading sample games…</option></select>
+          </div>
+          <div id="game-meta" class="game-meta">
+            <span class="eyebrow">YOUR NEXT DISCOVERY</span>
+            <h3>Every game has a story.</h3>
+            <p>Import a PGN to explore the decisions behind every move.</p>
+            <button id="sample" class="button secondary">
+              Open a sample game <span>↗</span>
+            </button>
+          </div>
+          <div class="notation-head">
+            <span>MOVE</span><span>WHITE</span><span>BLACK</span>
+          </div>
+          <div id="notation" class="notation">
+            <div class="notation-empty">
+              <span>♙</span>
+              <p>Your game moves<br />will appear here.</p>
+            </div>
+          </div>
+          <div class="game-footer">
+            <span class="small-dot"></span
+            ><span id="game-result">Mainline navigation · Standard chess</span>
+          </div>
+        </section>
         <section class="board-panel" aria-label="Chess position">
           <div class="section-line">
             <span class="section-title">THE POSITION</span
@@ -58,14 +94,31 @@
             </div>
             <span class="player-color" id="top-color">●</span>
           </div>
-          <div class="board-wrap">
-            <div
-              id="board"
-              class="board"
-              role="img"
-              aria-label="Chessboard, starting position"
-            ></div>
-            <svg id="move-arrows" class="move-arrows" viewBox="0 0 8 8" aria-hidden="true"></svg>
+          <div class="board-arrow-legend" aria-label="Arrow colors">
+            <span><i class="legend-maia"></i> Maia</span>
+            <span><i class="legend-engine"></i> Stockfish</span>
+            <span><i class="legend-played"></i> Played</span>
+          </div>
+          <div class="board-analysis-stage">
+            <div class="eval-gauge maia-gauge" aria-label="Maia top move probability">
+              <span class="gauge-title">Maia<br />top move</span>
+              <div class="gauge-track"><div class="gauge-fill" id="maia-gauge-fill"></div><span class="gauge-marker" id="maia-gauge-marker">—</span></div>
+              <span class="gauge-min">0%</span><span class="gauge-max">100%</span>
+            </div>
+            <div class="board-wrap">
+              <div
+                id="board"
+                class="board"
+                role="img"
+                aria-label="Chessboard, starting position"
+              ></div>
+              <svg id="move-arrows" class="move-arrows" viewBox="0 0 8 8" aria-hidden="true"></svg>
+            </div>
+            <div class="eval-gauge stockfish-gauge" aria-label="Stockfish evaluation from White's perspective">
+              <span class="gauge-title">SF eval<br />(White)</span>
+              <div class="gauge-track"><span class="gauge-center"></span><div class="gauge-fill" id="sf-gauge-fill"></div><span class="gauge-marker" id="sf-gauge-marker">—</span></div>
+              <span class="gauge-min">−4</span><span class="gauge-max">+4</span>
+            </div>
           </div>
           <div class="player-strip bottom-player">
             <span class="avatar light" id="bottom-avatar">W</span>
@@ -134,122 +187,47 @@
             <code id="fen-display"></code>
           </details>
         </section>
-        <section class="game-panel panel" aria-label="Game notation">
+
+        <section class="analysis-panel panel" aria-label="Chess analysis">
           <div class="panel-heading">
-            <h2>Game notebook</h2>
-            <span id="game-count" class="count">PGN</span>
-          </div>
-          <div class="game-select-wrap">
-            <label for="game-select" class="sr-only">Select imported game</label
-            ><select id="game-select" disabled>
-              <option>No game imported</option>
-            </select>
-          </div>
-          <div class="sample-select-wrap">
-            <label for="sample-game-select">Sample library</label>
-            <select id="sample-game-select"><option>Loading sample games…</option></select>
-          </div>
-          <div id="game-meta" class="game-meta">
-            <span class="eyebrow">YOUR NEXT DISCOVERY</span>
-            <h3>Every game has a story.</h3>
-            <p>Import a PGN to explore the decisions behind every move.</p>
-            <button id="sample" class="button secondary">
-              Open a sample game <span>↗</span>
-            </button>
-          </div>
-          <div class="notation-head">
-            <span>MOVE</span><span>WHITE</span><span>BLACK</span>
-          </div>
-          <div id="notation" class="notation">
-            <div class="notation-empty">
-              <span>♙</span>
-              <p>Your game moves<br />will appear here.</p>
-            </div>
-          </div>
-          <div class="game-footer">
-            <span class="small-dot"></span
-            ><span id="game-result">Mainline navigation · Standard chess</span>
-          </div>
-        </section>
-        </div>
-        <section
-          class="analysis-panel panel"
-          aria-label="Human move predictions"
-        >
-          <div class="panel-heading">
-            <h2>Human move explorer</h2>
+            <h2>Analysis</h2>
             <span id="analysis-indicator" class="live-label">MAIA 3</span>
           </div>
-          <div class="tabs" role="tablist" aria-label="Analysis mode">
-            <button class="tab active" role="tab" aria-selected="true" id="tab-triple" data-mode="triple">Ratings</button>
+          <div class="analysis-views" role="tablist" aria-label="Analysis view">
+            <button class="view-tab active" id="view-dual" data-view="dual" role="tab" aria-selected="true">Human + SF</button>
+            <button class="view-tab" id="view-maia" data-view="maia" role="tab" aria-selected="false">Maia</button>
+            <button class="view-tab" id="view-stockfish" data-view="stockfish" role="tab" aria-selected="false">Stockfish</button>
+          </div>
+          <div id="maia-tabs" class="tabs" role="tablist" aria-label="Maia analysis mode" hidden>
+            <button class="tab" role="tab" aria-selected="false" id="tab-triple" data-mode="triple">Ratings</button>
             <button class="tab" role="tab" aria-selected="false" id="tab-explore" data-mode="explore">Explore</button>
             <button class="tab" role="tab" aria-selected="false" id="tab-compare" data-mode="compare">Compare</button>
             <button class="tab" role="tab" aria-selected="false" id="tab-spectrum" data-mode="spectrum">Spectrum</button>
           </div>
-          <details id="stockfish-panel" class="stockfish-panel" open>
-            <summary>
-              <span><strong>Stockfish 19</strong><small id="stockfish-status">Checking local engine…</small></span>
-              <span class="engine-summary-mark">⌄</span>
-            </summary>
-            <div class="stockfish-controls">
-              <p>Maia shows human choices; Stockfish evaluates chess strength.</p>
-              <label for="stockfish-depth">Search depth</label>
-              <select id="stockfish-depth">
-                <option value="12">12 · quick</option>
-                <option value="16" selected>16 · balanced</option>
-                <option value="18">18 · deeper</option>
-                <option value="20">20 · deepest</option>
-              </select>
-              <button id="stockfish-analyze" class="button secondary" disabled>Analyze this position</button>
-              <div class="engine-install-row">
-                <button id="stockfish-choose" class="text-button">Choose Stockfish 19 file…</button>
-                <input id="stockfish-file" type="file" accept=".exe,.bin" hidden />
-                <a href="https://stockfishchess.org/download/" target="_blank" rel="noopener">Official download ↗</a>
-              </div>
-              <small class="engine-install-note">Download the build for this computer, extract the archive, then choose its engine executable here.</small>
-            </div>
-            <div id="stockfish-results" class="stockfish-results" aria-live="polite"></div>
-          </details>
-          <div class="rating-control">
+          <div class="rating-control" id="rating-control">
             <div class="rating-heading">
               <div>
-                <label for="elo" id="rating-label">Playing strength</label
-                ><small>Lichess blitz rating</small>
+                <label for="elo" id="rating-label">Playing strength</label>
+                <small>Lichess blitz rating · Maia human-move model</small>
               </div>
-              <div class="rating-value">
-                <span id="elo-value">1600</span><small>ELO</small>
-              </div>
+              <div class="rating-value"><span id="elo-value">1800</span><small>ELO</small></div>
             </div>
-            <input
-              id="elo"
-              aria-label="Lichess blitz rating"
-              type="range"
-              min="400"
-              max="3000"
-              step="100"
-              value="1600"
-            />
-            <div class="range-labels">
-              <span>400 <span>Developing</span></span
-              ><span>3000 <span>Expert</span></span>
-            </div>
-            <div class="linked-label">
-              <span aria-hidden="true">↔</span> Equal-rated opponents
-              <strong id="matchup">1600 vs. 1600</strong>
-            </div>
+            <input id="elo" aria-label="Lichess blitz rating" type="range" min="400" max="3000" step="100" value="1800" />
+            <div class="range-labels"><span>400 <span>Developing</span></span><span>3000 <span>Expert</span></span></div>
+            <div class="linked-label"><span aria-hidden="true">↔</span> Opponent rating <strong id="matchup">1800 vs. 1800</strong></div>
+            <details class="matchup-menu dual-matchup-menu">
+              <summary>Opponent rating settings</summary>
+              <label class="matchup-toggle"><input id="dual-equal" type="checkbox" checked /> Equal-rated opponents</label>
+              <label class="opponent-elo-label" for="dual-opponent-elo">Opponent Elo<input id="dual-opponent-elo" type="number" min="400" max="3000" step="100" value="1800" disabled /></label>
+            </details>
           </div>
-          <div id="triple-controls" class="triple-controls">
+          <div id="triple-controls" class="triple-controls" hidden>
             <div class="rating-generation">
               <label for="rating-count">Number of ratings <output id="rating-count-value">3</output></label>
               <input id="rating-count" type="range" min="1" max="8" step="1" value="3" />
               <label for="rating-spacing">Generated spacing</label>
               <div class="spacing-controls">
-                <select id="rating-spacing">
-                  <option value="100">100 Elo</option>
-                  <option value="200">200 Elo</option>
-                  <option value="400" selected>400 Elo</option>
-                  <option value="custom">Custom</option>
-                </select>
+                <select id="rating-spacing"><option value="100">100 Elo</option><option value="200">200 Elo</option><option value="400" selected>400 Elo</option><option value="custom">Custom</option></select>
                 <input id="custom-spacing" type="number" min="100" max="2600" step="100" value="400" aria-label="Custom average spacing in Elo" hidden />
               </div>
               <small id="spacing-note">Centered on 1800; edit any Elo below.</small>
@@ -262,88 +240,56 @@
             </details>
           </div>
           <div id="compare-controls" class="compare-controls" hidden>
-            <label>Rating A<select id="rating-a"></select></label><span>→</span
-            ><label>Rating B<select id="rating-b"></select></label
-            ><label class="sort-control"
-              >Sort by<select id="compare-sort">
-                <option value="absolute">Largest absolute change</option>
-                <option value="positive">Largest increase (B − A)</option>
-                <option value="negative">Largest decrease (B − A)</option>
-                <option value="a">Probability at A</option>
-                <option value="b">Probability at B</option>
-              </select></label
-            >
+            <label>Rating A<select id="rating-a"></select></label><span>→</span>
+            <label>Rating B<select id="rating-b"></select></label>
+            <label class="sort-control">Sort by<select id="compare-sort"><option value="absolute">Largest absolute change</option><option value="positive">Largest increase (B − A)</option><option value="negative">Largest decrease (B − A)</option><option value="a">Probability at A</option><option value="b">Probability at B</option></select></label>
           </div>
-          <div class="results-heading">
-            <div>
-              <h3 id="results-title">Predicted moves</h3>
-              <span id="results-subtitle">A window into human choice</span>
+          <div id="dual-view">
+            <div class="dual-toolbar">
+              <label>Maia moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
+              <label>Engine lines<select id="stockfish-lines-count"><option value="5">5 lines</option><option value="8">8 lines</option><option value="12">12 lines</option></select></label>
+              <label>Depth<select id="stockfish-depth"><option value="12">12 · quick</option><option value="16" selected>16 · balanced</option><option value="18">18 · deeper</option><option value="20">20 · deepest</option></select></label>
+              <label class="variation-toggle"><input id="show-variations" type="checkbox" /> Show variations</label>
+              <button id="stockfish-analyze" class="button secondary" disabled>Analyze</button>
             </div>
-            <label id="limit-label"
-              ><span class="sr-only">Number of moves</span
-              ><select id="move-limit">
-                <option value="5">Top 5</option>
-                <option value="all">All moves</option>
-              </select></label
-            >
-          </div>
-          <div id="actual-card" class="actual-card" hidden></div>
-          <div id="loading" class="loading" role="status" hidden>
-            <span class="spinner"></span><span>Analyzing human choices…</span>
-          </div>
-          <div id="results" class="results" aria-live="polite">
-            <div class="empty-state">
-              <span class="empty-symbol">✦</span>
-              <h3>A new way to read the board.</h3>
-              <p>
-                Maia predicts human choices at your selected rating. Analysis
-                will appear here once the model is available.
-              </p>
+            <div id="dual-results" class="dual-results">
+              <section class="dual-column human-column">
+                <header><h3>Maia · Human moves</h3><span id="human-model-rating">1800 Elo</span></header>
+                <p class="analysis-caption">Probability of a human choosing each move</p>
+                <div id="dual-actual-card" class="actual-card" hidden></div>
+                <div id="dual-human-moves" class="dual-moves" aria-live="polite"><div class="stockfish-loading">Waiting for Maia analysis…</div></div>
+              </section>
+              <section class="dual-column engine-column">
+                <header><h3 id="sf-engine-title">Stockfish 19 · Engine moves</h3><span id="stockfish-side-label">Eval from White’s perspective</span></header>
+                <div id="stockfish-results" class="stockfish-results" aria-live="polite"><div class="stockfish-loading">Choose a Stockfish engine to begin.</div></div>
+              </section>
             </div>
+            <section class="rating-chart-panel">
+              <header><h3>Moves by rating</h3><small>Maia human-move probabilities across Lichess blitz ratings</small></header>
+              <div id="rating-comparison-chart" role="img" aria-label="Top move probabilities by playing rating"><span class="stockfish-loading">Chart loads with Maia analysis.</span></div>
+            </section>
           </div>
-          <div id="spectrum-chart" class="spectrum-chart" hidden>
-            <label for="chart-move">Follow a move across ratings</label
-            ><select id="chart-move"></select>
-            <div
-              id="chart"
-              role="img"
-              aria-label="Move probability across ratings"
-            ></div>
-          </div>
-          <div class="results-footer">
-            <span id="probability-total">Full legal policy · No sampling</span>
-            <div>
-              <button id="retry" class="text-button">Retry</button
-              ><button id="export-json" class="text-button" disabled>
-                JSON ↧</button
-              ><button id="export-csv" class="text-button" disabled>
-                CSV ↧
-              </button>
+          <div id="maia-view" hidden>
+            <div class="results-heading">
+              <div><h3 id="results-title">Predicted moves</h3><span id="results-subtitle">A window into human choice</span></div>
+              <label id="limit-label"><span class="sr-only">Number of moves</span><select id="maia-move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All moves</option></select></label>
             </div>
+            <div id="actual-card" class="actual-card" hidden></div>
+            <div id="loading" class="loading" role="status" hidden><span class="spinner"></span><span>Analyzing human choices…</span></div>
+            <div id="results" class="results" aria-live="polite"><div class="empty-state"><span class="empty-symbol">✦</span><h3>A new way to read the board.</h3><p>Maia predicts human choices at your selected rating.</p></div></div>
+            <div id="spectrum-chart" class="spectrum-chart" hidden><label for="chart-move">Follow a move across ratings</label><select id="chart-move"></select><div id="chart" role="img" aria-label="Move probability across ratings"></div></div>
+            <div class="results-footer"><span id="probability-total">Full legal policy · No sampling</span><div><button id="retry" class="text-button">Retry</button><button id="export-json" class="text-button" disabled>JSON ↧</button><button id="export-csv" class="text-button" disabled>CSV ↧</button></div></div>
+            <details class="model-note"><summary>How to read these predictions <span>ⓘ</span></summary><p>These are model predictions of human choices, not measured frequencies or engine evaluations. The most likely move is not necessarily the strongest.</p><p>Maia’s 79-million-parameter model scores all legal moves in a single neural-network pass; it does not search chess variations. The model stays loaded during the session, and repeated positions with the same history and ratings use a local result cache.</p><p>The official code accepts ratings 0–5000. Its API does not establish rating-specific training or evaluation coverage. Interpret the 400 and 3000 extremes with particular caution; ratings are never silently clamped.</p><p id="history-note">PGN history is used when available. A standalone FEN repeats its current position to fill the eight-position input.</p></details>
           </div>
-          <details class="model-note">
-            <summary>How to read these predictions <span>ⓘ</span></summary>
-            <p>
-              These are model predictions of human choices, not measured
-              frequencies or engine evaluations. The most likely move is not
-              necessarily the strongest.
-            </p>
-            <p>
-              Maia’s 79-million-parameter model scores all legal moves in a
-              single neural-network pass; it does not search chess variations.
-              The model stays loaded during the session, and repeated positions
-              with the same history and ratings use a local result cache.
-            </p>
-            <p>
-              The official code accepts ratings 0–5000. Its API does not
-              establish rating-specific training or evaluation coverage.
-              Interpret the 400 and 3000 extremes with particular caution;
-              ratings are never silently clamped.
-            </p>
-            <p id="history-note">
-              PGN history is used when available. A standalone FEN repeats its
-              current position to fill the eight-position input.
-            </p>
+          <details id="stockfish-panel" class="stockfish-panel">
+            <summary><span><strong>Engine setup</strong><small id="stockfish-status">Checking local engine…</small></span><span class="engine-summary-mark">⌄</span></summary>
+            <div class="stockfish-controls">
+              <p>Use the official Stockfish 19 release or install your own Stockfish development executable.</p>
+              <label for="stockfish-channel">Build to install</label>
+              <select id="stockfish-channel"><option value="official19">Official Stockfish 19</option><option value="development">My development build</option></select>
+              <div class="engine-install-row"><button id="stockfish-choose" class="text-button">Choose engine file…</button><input id="stockfish-file" type="file" accept=".exe,.bin,*" hidden /><a id="stockfish-download" href="https://stockfishchess.org/download/" target="_blank" rel="noopener">Download Stockfish 19 ↗</a></div>
+              <small class="engine-install-note">Download and extract the engine for this computer, then choose its executable. Development builds are available from the official testing server. The executable stays on this computer.</small>
+            </div>
           </details>
         </section>
       </div>

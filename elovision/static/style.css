@@ -1554,3 +1554,363 @@ textarea {
   font-size: 9px;
   padding: 0 0 10px;
 }
+
+/* Maia + engine analysis workspace. */
+.workspace {
+  grid-template-columns: minmax(245px, 0.72fr) minmax(400px, 1.12fr) minmax(440px, 1.16fr);
+  gap: 20px;
+}
+.game-panel,
+.board-panel,
+.analysis-panel {
+  min-width: 0;
+}
+.board-arrow-legend {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  color: var(--muted);
+  font-size: 9px;
+  padding: 0 0 6px;
+}
+.board-arrow-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.board-arrow-legend i {
+  display: inline-block;
+  width: 15px;
+  height: 3px;
+  border-radius: 2px;
+}
+.legend-maia { background: #ef726b; }
+.legend-engine { background: #65a6ff; }
+.legend-played { background: #e9c85e; }
+.board-analysis-stage {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  align-items: stretch;
+  gap: 7px;
+}
+.board-analysis-stage .board-wrap {
+  min-width: 0;
+}
+.eval-gauge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  min-height: 100%;
+  color: var(--muted);
+  font-size: 8px;
+}
+.gauge-title {
+  min-height: 30px;
+  text-align: center;
+  font-size: 8px;
+  line-height: 1.2;
+  color: var(--muted);
+}
+.gauge-track {
+  position: relative;
+  flex: 1;
+  width: 11px;
+  min-height: 180px;
+  border-radius: 8px;
+  background: linear-gradient(to top, #29352f, #36483c);
+  border: 1px solid #45584b;
+  margin: 3px 0 6px;
+}
+.maia-gauge .gauge-fill {
+  position: absolute;
+  inset: auto 0 0;
+  height: 0;
+  border-radius: inherit;
+  background: linear-gradient(to top, #a73c45, #f08079);
+}
+.stockfish-gauge .gauge-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 50%;
+  height: 0;
+  border-radius: 8px;
+  background: linear-gradient(to top, #3268a5, #73b5ff);
+}
+.stockfish-gauge .gauge-center {
+  position: absolute;
+  z-index: 1;
+  left: -3px;
+  right: -3px;
+  top: 50%;
+  border-top: 1px solid #d4dfd2;
+}
+.gauge-marker {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 4px;
+  border-radius: 9px;
+  border: 1px solid #566b5b;
+  color: var(--text);
+  background: #1b251f;
+  font-size: 8px;
+  white-space: nowrap;
+}
+.gauge-min,
+.gauge-max {
+  position: absolute;
+  bottom: -1px;
+  font-size: 7px;
+}
+.gauge-min { left: 0; }
+.gauge-max { right: 0; }
+.analysis-views {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  padding: 0 16px;
+  gap: 19px;
+}
+.view-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 2px 11px;
+  color: var(--muted);
+  background: none;
+  font-size: 10px;
+}
+.view-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#maia-tabs {
+  padding-top: 10px;
+}
+#rating-control {
+  padding: 15px 16px 11px;
+}
+#rating-control input[type="range"] {
+  margin: 17px 0 10px;
+}
+.dual-matchup-menu {
+  margin-top: 10px;
+}
+.opponent-elo-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 9px;
+}
+.opponent-elo-label input {
+  width: 82px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 10px;
+}
+.dual-toolbar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #171e19;
+}
+.dual-toolbar > label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.dual-toolbar select {
+  padding: 5px 6px;
+  font-size: 9px;
+}
+.dual-toolbar .button {
+  padding: 6px 10px;
+  font-size: 9px;
+}
+.dual-toolbar .variation-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  font-size: 9px;
+}
+.variation-toggle input,
+.matchup-toggle input {
+  accent-color: var(--accent);
+}
+.dual-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.dual-column {
+  min-width: 0;
+  padding: 13px 14px 10px;
+}
+.dual-column + .dual-column {
+  border-left: 1px solid var(--line);
+}
+.dual-column > header,
+.rating-chart-panel > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.dual-column h3,
+.rating-chart-panel h3 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+}
+.dual-column > header span,
+.rating-chart-panel header small {
+  color: var(--muted);
+  font-size: 8px;
+  text-align: right;
+}
+.analysis-caption {
+  color: var(--muted);
+  font-size: 8px;
+  margin: 4px 0 8px;
+}
+.dual-moves,
+.stockfish-results {
+  padding: 0;
+}
+.dual-moves .move-prediction {
+  padding: 7px 0 6px;
+}
+.dual-moves .prediction-label {
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.dual-moves .prediction-uci {
+  display: none;
+}
+.dual-moves .prediction-rank {
+  font-size: 8px;
+  min-width: 16px;
+}
+.dual-moves .prediction-san {
+  color: #f08b82;
+  font-size: 10px;
+}
+.dual-moves .prediction-percent {
+  margin-left: auto;
+  color: var(--text);
+  font-size: 9px;
+}
+.dual-moves .probability-bar {
+  background: #dc655f;
+}
+.dual-results.pure-stockfish .human-column {
+  display: none;
+}
+.dual-results.pure-stockfish {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dual-results.pure-stockfish .engine-column {
+  border-left: 0;
+}
+.stockfish-result-summary {
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.stockfish-line {
+  grid-template-columns: 20px minmax(38px, auto) 42px minmax(0, 1fr);
+  gap: 5px;
+  min-width: 0;
+}
+.stockfish-line strong:nth-child(2) {
+  color: #8dbafa;
+}
+.stockfish-line.best strong:nth-child(2) {
+  color: #b7d5ff;
+}
+.stockfish-line .engine-pv {
+  display: none;
+}
+.stockfish-results.show-variations .engine-pv {
+  display: block;
+  grid-column: 2 / -1;
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.rating-chart-panel {
+  margin: 0 14px 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #171e19;
+}
+.rating-chart-panel > header {
+  align-items: start;
+  margin-bottom: 5px;
+}
+#rating-comparison-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 120px;
+}
+.rating-chart-grid { stroke: #344037; stroke-dasharray: 2 3; }
+.rating-chart-axis { fill: #87978b; font-size: 8px; }
+.rating-chart-line { fill: none; stroke-width: 2; }
+.rating-chart-dot { stroke: #18221c; stroke-width: 1; }
+.rating-chart-legend { font-size: 8px; }
+.stockfish-panel {
+  margin: 12px 14px 14px;
+  background: #171e19;
+  border-color: var(--line);
+}
+.stockfish-panel > summary { padding: 9px 11px; }
+.stockfish-controls { padding: 0 11px 11px; }
+.stockfish-controls > select { justify-self: stretch; width: 100%; }
+.stockfish-controls > label:not(.matchup-toggle) { align-self: center; }
+.engine-install-row { justify-content: flex-start; flex-wrap: wrap; }
+.engine-install-row a { margin-left: auto; }
+.rating-control[hidden],
+#dual-view[hidden],
+#maia-view[hidden] { display: none !important; }
+@media (max-width: 1220px) {
+  .workspace {
+    grid-template-columns: minmax(250px, 0.7fr) minmax(400px, 1.3fr);
+  }
+  .game-panel { grid-column: 1; grid-row: 1; }
+  .board-panel { grid-column: 2; grid-row: 1; }
+  .analysis-panel { grid-column: 1 / -1; grid-row: 2; }
+  .dual-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .workspace { display: flex; flex-direction: column; }
+  .workspace > section { width: 100%; }
+  .game-panel { order: 0; }
+  .board-panel { order: 1; }
+  .analysis-panel { order: 2; }
+  .board-analysis-stage { grid-template-columns: 34px minmax(0, 1fr) 34px; }
+}
+@media (max-width: 600px) {
+  .dual-results { grid-template-columns: minmax(0, 1fr); }
+  .dual-column + .dual-column { border-left: 0; border-top: 1px solid var(--line); }
+  .dual-toolbar { align-items: stretch; }
+  .dual-toolbar > label { flex: 1 1 28%; }
+  .dual-toolbar .button { flex: 1 1 auto; }
+  .board-arrow-legend { gap: 9px; font-size: 8px; }
+  .board-analysis-stage { grid-template-columns: 30px minmax(0, 1fr) 30px; gap: 4px; }
+  .eval-gauge { font-size: 7px; }
+  .gauge-track { width: 9px; min-height: 120px; }
+  .gauge-title { font-size: 7px; }
+}
