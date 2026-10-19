@@ -8,7 +8,7 @@ const preview = globalThis.ELOVISION_PREVIEW || null;
 const localUrl = (path) => new URL(path, document.baseURI).href;
 const state = {
   games: [],
-  pgnImportToken: 0,
+  selectionToken: 0,
   ratingValues: [1400, 1800, 2200],
   opponentValues: [1400, 1800, 2200],
   game: null,
@@ -490,15 +490,15 @@ function cancelGameScopedAnalysis(nextGame) {
   }
 }
 async function importPgn(text) {
-  const token = ++state.pgnImportToken;
+  const token = ++state.selectionToken;
   let data;
   try {
     data = await api("pgn", { pgn: text });
   } catch (error) {
-    if (token !== state.pgnImportToken) return false;
+    if (token !== state.selectionToken) return false;
     throw error;
   }
-  if (token !== state.pgnImportToken) return false;
+  if (token !== state.selectionToken) return false;
   state.games = data.games;
   state.game = data.games[0];
   $("game-select").replaceChildren(
@@ -1436,16 +1436,20 @@ function setView(view) {
   else if (view === "stockfish") setMode("stockfish");
 }
 async function exportResults(format) {
+  const request = analysisRequest();
+  const exportPly = state.ply;
+  const exportMode = state.mode;
+  const exportGameId = state.game?.id || null;
   setExportButtonsDisabled(true);
   try {
     const response = await fetch(localUrl("api/v1/export"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...analysisRequest(),
+        ...request,
         format,
-        game_id: state.game?.id || null,
-        ply: state.game ? state.ply : null,
+        game_id: exportGameId,
+        ply: state.game ? exportPly : null,
       }),
     });
     if (!response.ok) {
@@ -1455,7 +1459,7 @@ async function exportResults(format) {
     const url = URL.createObjectURL(await response.blob());
     const a = node("a");
     a.href = url;
-    a.download = `elovision-ply${state.ply}-${state.mode}.${format}`;
+    a.download = `elovision-ply${exportPly}-${exportMode}.${format}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     toast(`${format.toUpperCase()} exported at full precision`);
@@ -2057,7 +2061,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 $("game-select").addEventListener("change", () => {
-  state.pgnImportToken += 1;
+  state.selectionToken += 1;
   state.game = state.games[Number($("game-select").value)];
   renderGame();
 });
@@ -2132,10 +2136,13 @@ $("fen-open").addEventListener("click", () => {
 $("fen-close").addEventListener("click", () => $("fen-dialog").close());
 $("fen-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const selectionToken = state.selectionToken;
   try {
     const position = await api("position", {
       fen: $("fen-input").value.trim(),
     });
+    if (selectionToken !== state.selectionToken) return;
+    state.selectionToken += 1;
     cancelGameScopedAnalysis(null);
     state.position = position;
     state.game = null;
@@ -2158,7 +2165,8 @@ $("fen-form").addEventListener("submit", async (event) => {
     renderBoard();
     scheduleAnalysis();
   } catch (error) {
-    $("fen-error").textContent = error.message;
+    if (selectionToken === state.selectionToken)
+      $("fen-error").textContent = error.message;
   }
 });
 $("export-json").addEventListener("click", () => exportResults("json"));

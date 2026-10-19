@@ -314,6 +314,38 @@ def test_latest_pgn_import_wins_when_responses_arrive_out_of_order(page):
     assert page.locator("#game-meta h3").text_content() == "Player C — Player D"
 
 
+def test_custom_fen_selection_survives_a_late_pgn_import(page):
+    page.add_init_script(
+        """(() => {
+          window.__pgnResolvers = [];
+          const fetch = window.fetch.bind(window);
+          window.fetch = async (input, init = {}) => {
+            const response = await fetch(input, init);
+            if (String(input).includes('/api/v1/pgn'))
+              await new Promise(resolve => window.__pgnResolvers.push(resolve));
+            return response;
+          };
+        })();"""
+    )
+    page.goto(BASE_URL)
+    pgn = '[Event "Late PGN"]\n[White "Player A"]\n[Black "Player B"]\n\n1. e4 e5 *\n'
+    page.locator("#pgn-file").set_input_files(
+        {"name": "late.pgn", "mimeType": "application/x-chess-pgn", "buffer": pgn.encode()}
+    )
+    for _ in range(40):
+        if page.evaluate("window.__pgnResolvers.length === 1"):
+            break
+        page.wait_for_timeout(50)
+    assert page.evaluate("window.__pgnResolvers.length === 1")
+    page.locator("#fen-open").click()
+    page.locator("#fen-input").fill("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")
+    page.get_by_role("button", name="Explore position").click()
+    page.locator("#fen-dialog").wait_for(state="hidden")
+    page.evaluate("window.__pgnResolvers[0]()")
+    page.wait_for_timeout(100)
+    assert page.locator("#game-meta h3").text_content() == "Custom position"
+
+
 def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     from playwright.sync_api import expect
 
