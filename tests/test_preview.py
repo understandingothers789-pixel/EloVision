@@ -39,13 +39,13 @@ def test_preview_inside_sandbox_without_network(tmp_path):
         assert frame.locator(".piece").count() == 32
         assert (
             frame.locator("body").evaluate("el => getComputedStyle(el).backgroundColor")
-            == "rgb(17, 22, 20)"
+            == "rgb(23, 21, 24)"
         )
         assert frame.locator(".piece").first.evaluate("el => el.complete && el.naturalWidth > 0")
         frame.locator("#sample").click()
         frame.get_by_role("button", name="e4", exact=True).click()
         assert frame.locator(".move-button.selected").text_content() == "e4"
-        frame.locator("#elo").fill("2200")
+        frame.locator("#analysis-rating").select_option("2200")
         assert frame.locator("#matchup").text_content() == "2200 vs. 2200"
         frame.locator("#flip").click()
         assert frame.locator(".square").first.get_attribute("data-square") == "h1"

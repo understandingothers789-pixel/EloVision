@@ -21,7 +21,7 @@
       <div class="header-right">
         <span class="local-badge"><i></i> Local inference</span
         ><button id="import" class="button primary">
-          <span aria-hidden="true">↥</span> Import PGN</button
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M10 14V3m-4 4 4-4 4 4M3 13v4h14v-4"/></svg> Import PGN</button
         ><input type="file" id="pgn-file" accept=".pgn,text/plain" hidden />
       </div>
     </header>
@@ -91,7 +91,7 @@
           <div class="section-line">
             <span class="section-title">THE POSITION</span
             ><button id="fen-open" class="text-button">
-              Set FEN <span>↗</span>
+              Set FEN
             </button>
           </div>
           <div class="player-strip">
@@ -143,7 +143,7 @@
               title="Flip board"
               aria-label="Flip board"
             >
-              ⇅
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 16V3m-3 3 3-3 3 3m5-2v13m-3-3 3 3 3-3"/></svg>
             </button>
             <div class="navigation">
               <button
@@ -183,7 +183,7 @@
               title="Copy FEN"
               aria-label="Copy FEN"
             >
-              ⧉
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M12 7V3H3v9h4"/></svg>
             </button>
           </div>
           <div class="board-footnote">
@@ -209,8 +209,9 @@
 
         <section class="analysis-panel panel" aria-label="Chess analysis">
           <div class="panel-heading">
-            <h2>Analysis</h2>
+            <h2><span class="analysis-heading-icon" aria-hidden="true">▥</span> Analysis</h2>
             <span id="analysis-indicator" class="live-label">MAIA 3</span>
+            <button id="analysis-collapse" class="analysis-collapse" aria-expanded="true" aria-controls="analysis-card">Hide</button>
           </div>
           <div class="analysis-views" role="tablist" aria-label="Analysis view">
             <button class="view-tab active" id="view-dual" data-view="dual" role="tab" aria-selected="true">Human + SF</button>
@@ -263,28 +264,27 @@
             <label class="sort-control">Sort by<select id="compare-sort"><option value="absolute">Largest absolute change</option><option value="positive">Largest increase (B − A)</option><option value="negative">Largest decrease (B − A)</option><option value="a">Probability at A</option><option value="b">Probability at B</option></select></label>
           </div>
           <div id="dual-view">
-            <div class="dual-toolbar">
-              <label>Maia moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
-              <label>Engine lines<select id="stockfish-lines-count"><option value="5">5 lines</option><option value="8">8 lines</option><option value="12">12 lines</option></select></label>
-              <label>Depth<select id="stockfish-depth"><option value="12">12 · quick</option><option value="16" selected>16 · balanced</option><option value="18">18 · deeper</option><option value="20">20 · deepest</option></select></label>
-              <label class="variation-toggle"><input id="show-variations" type="checkbox" /> Show variations</label>
-              <button id="stockfish-analyze" class="button secondary" disabled>Analyze</button>
-            </div>
+            <section id="analysis-card" class="analysis-card" aria-label="Human and engine move comparison">
             <div id="dual-results" class="dual-results">
               <section class="dual-column human-column">
-                <header><h3>Maia · Human moves</h3><span id="human-model-rating">1800 Elo</span></header>
-                <p class="analysis-caption">Probability of a human choosing each move</p>
+                <header><label class="human-heading" for="analysis-rating"><span id="human-model-rating">Maia 1800: Human Moves</span><select id="analysis-rating" aria-label="Human move rating"></select><span aria-hidden="true">⌄</span></label></header>
+                <div class="move-table-heading"><span>move</span><span>prob</span></div>
                 <div id="dual-actual-card" class="actual-card" hidden></div>
                 <div id="dual-human-moves" class="dual-moves" aria-live="polite"><div class="stockfish-loading">Waiting for Maia analysis…</div></div>
+                <button id="comparison-more" class="comparison-more" hidden>All legal moves ⌄</button>
               </section>
               <section class="dual-column engine-column">
-                <header><h3 id="sf-engine-title">Stockfish 19 · Engine moves</h3><span id="stockfish-side-label">Eval from White’s perspective</span></header>
+                <header><h3 id="sf-engine-title">Stockfish 19: Engine Moves</h3><span id="engine-depth" title="Completed search depth"></span></header>
+                <div class="move-table-heading"><span>move</span><span title="Evaluation in pawns, from White’s perspective">eval <small id="stockfish-side-label">(White)</small></span></div>
                 <div id="stockfish-results" class="stockfish-results" aria-live="polite"><div class="stockfish-loading">Choose a Stockfish engine to begin.</div></div>
               </section>
             </div>
+            <div id="comparison-summary" class="comparison-summary" aria-live="polite"><span class="comparison-label">HUMAN CHOICE · ENGINE SEARCH</span><p>Explore where human intuition and engine analysis agree.</p></div>
+            </section>
             <section class="rating-chart-panel">
-              <header><h3>Moves by rating</h3><small>Maia human-move probabilities across Lichess blitz ratings</small></header>
-              <div id="rating-comparison-chart" role="img" aria-label="Top move probabilities by playing rating"><span class="stockfish-loading">Chart loads with Maia analysis.</span></div>
+              <header><h3>Moves by Rating</h3><span class="chart-help" title="Hover or focus a point for probabilities. Click a move in the legend to hide or show its curve.">ⓘ</span></header>
+              <div id="rating-comparison-chart" role="group" aria-label="Top move probabilities by playing rating"><span class="stockfish-loading">Chart loads with Maia analysis.</span></div>
+              <p id="rating-chart-context" class="chart-context">Lichess blitz ratings · equal-rated opponents</p>
             </section>
           </div>
           <div id="maia-view" hidden>
@@ -299,6 +299,18 @@
             <div class="results-footer"><span id="probability-total">Full legal policy · No sampling</span><div><button id="retry" class="text-button">Retry</button><button id="export-json" class="text-button" disabled>JSON ↧</button><button id="export-csv" class="text-button" disabled>CSV ↧</button></div></div>
             <details class="model-note"><summary>How to read these predictions <span>ⓘ</span></summary><p>These are model predictions of human choices, not measured frequencies or engine evaluations. The most likely move is not necessarily the strongest.</p><p>Maia’s 79-million-parameter model scores all legal moves in a single neural-network pass; it does not search chess variations. The model stays loaded during the session, and repeated positions with the same history and ratings use a local result cache.</p><p>The official code accepts ratings 0–5000. Its API does not establish rating-specific training or evaluation coverage. Interpret the 400 and 3000 extremes with particular caution; ratings are never silently clamped.</p><p id="history-note">PGN history is used when available. A standalone FEN repeats its current position to fill the eight-position input.</p></details>
           </div>
+          <details id="analysis-options" class="analysis-options">
+            <summary><span>⚙︎ <strong>Analysis options</strong></span><span class="options-current">Rating, arrows &amp; variations <span aria-hidden="true">⌄</span></span></summary>
+            <div id="analysis-control-slot"></div>
+            <div class="dual-toolbar">
+              <label>Human moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
+              <label>Engine lines<select id="stockfish-lines-count"><option value="5">5 lines</option><option value="8">8 lines</option><option value="12">12 lines</option></select></label>
+              <label>Depth<select id="stockfish-depth"><option value="12">12 · quick</option><option value="16" selected>16 · balanced</option><option value="18">18 · deeper</option><option value="20">20 · deepest</option></select></label>
+              <label>Arrows per model<select id="analysis-arrows"><option value="1">Top move</option><option value="3" selected>Top 3</option><option value="5">Top 5</option><option value="all">All displayed</option></select></label>
+              <label class="variation-toggle"><input id="show-variations" type="checkbox" /> Show variations</label>
+              <button id="stockfish-analyze" class="button secondary" disabled>Analyze</button>
+            </div>
+          </details>
           <details id="stockfish-panel" class="stockfish-panel">
             <summary><span><strong>Engine setup</strong><small id="stockfish-status">Checking local engine…</small></span><span class="engine-summary-mark">⌄</span></summary>
             <div class="stockfish-controls">
@@ -346,6 +358,7 @@
         <button class="button primary" type="submit">Explore position</button>
       </form>
     </dialog>
+    <div id="move-inspector" class="move-inspector" role="tooltip" hidden></div>
     <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>

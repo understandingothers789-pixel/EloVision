@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const RATINGS = Array.from({ length: 14 }, (_, i) => 400 + i * 200);
 const MAX_ENGINE_BYTES = 512 * 1024 * 1024;
+const MOVE_COLORS = ["#ffd76c", "#58b36e", "#228f4c", "#e3e5ad", "#ed755e"];
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 // Set only by the standalone preview builder; contains real board states, never policy data.
 const preview = globalThis.ELOVISION_PREVIEW || null;
@@ -22,6 +23,8 @@ const state = {
   predictions: [],
   stockfish: null,
   stockfishAvailable: false,
+  hoverMove: null,
+  hiddenChartMoves: new Set(),
   selectedMove: null,
   revision: 0,
   timer: null,
@@ -175,7 +178,10 @@ function renderBoard() {
   $("turn").textContent =
     pos.outcome ||
     `${capitalize(pos.turn)} to move${pos.check ? " · Check" : ""}`;
-  $("legal-count").textContent = `${pos.legal_count} legal moves`;
+  $("legal-count").textContent = `${pos.outcome || `${capitalize(pos.turn)} to move`} · ${pos.legal_count} legal moves`;
+  document.querySelectorAll(".game-player-line").forEach((line) => {
+    line.classList.toggle("active-turn", line.dataset.color === pos.turn);
+  });
   $("fen-display").textContent = pos.fen;
   $("ply-label").textContent = state.ply
     ? `Ply ${state.ply} / ${state.game?.moves.length || 0}`
@@ -229,6 +235,14 @@ function renderGame() {
       `${game.headers.White || "White"} — ${game.headers.Black || "Black"}`,
     ),
   );
+  const players = node("div", "game-players");
+  for (const color of ["White", "Black"]) {
+    const line = node("div", "game-player-line");
+    line.dataset.color = color.toLowerCase();
+    line.append(node("i", `player-dot ${color.toLowerCase()}`), node("strong", "", game.headers[color] || color), node("small", "", game.headers[`${color}Elo`] || color));
+    players.append(line);
+  }
+  meta.append(players);
   for (const [label, value] of [
     ["Event", game.headers.Event],
     ["Date", game.headers.Date],
@@ -293,6 +307,11 @@ async function importPgn(text) {
 }
 function scheduleAnalysis(delay = 0) {
   if (!state.position) return;
+  hideMoveInspector();
+  if (state.chartFen !== state.position.fen) {
+    state.hiddenChartMoves.clear();
+    state.chartFen = state.position.fen;
+  }
   const revision = ++state.revision;
   clearTimeout(state.timer);
   state.controller?.abort();
@@ -308,9 +327,11 @@ function scheduleAnalysis(delay = 0) {
   $("results").replaceChildren();
   $("actual-card").hidden = true;
   $("dual-actual-card").hidden = true;
+  $("comparison-more").hidden = true;
   $("spectrum-chart").hidden = true;
   $("export-json").disabled = $("export-csv").disabled = true;
   renderGauges();
+  renderMoveArrows();
   if (state.mode === "stockfish") {
     $("loading").hidden = true;
     $("analysis-indicator").textContent = state.stockfishAvailable ? "STOCKFISH" : "ENGINE NEEDED";
@@ -362,6 +383,9 @@ async function analyze(revision) {
       node("p", "", error.message),
     );
     $(state.mode === "dual" ? "dual-human-moves" : "results").replaceChildren(empty);
+    if (state.mode === "dual") $("rating-comparison-chart").replaceChildren(
+      node("div", "chart-empty", "The rating graph appears when local Maia analysis is available."),
+    );
     $("analysis-indicator").textContent = preview ? "PREVIEW" : "UNAVAILABLE";
     $("model-status").textContent = preview
       ? "Interface preview · No backend"
@@ -405,8 +429,8 @@ function renderPredictions() {
   }
   if (state.mode === "dual") {
     $("dual-human-moves").replaceChildren();
-    renderExplore($("dual-human-moves"), predictions[0], "move-limit", "dual-actual-card");
-    $("human-model-rating").textContent = `${predictions[0].player_elo} Elo`;
+    renderHumanComparison(predictions[0]);
+    $("human-model-rating").textContent = `Maia ${predictions[0].player_elo}: Human Moves`;
     renderMoveArrows(predictions);
   }
   else if (state.mode === "triple") renderTriple(container, predictions);
@@ -459,6 +483,112 @@ function renderExplore(container, prediction, limitId = "maia-move-limit", actua
     row.append(label, track);
     container.append(row);
   }
+}
+function comparisonMoves() {
+  const prediction = state.predictions[0] || state.ratingPredictions[0];
+  if (!prediction) return [];
+  const moves = prediction.moves.slice(0, 5);
+  const engineBest = state.stockfish?.lines?.[0];
+  const engineMove = prediction.moves.find((move) => move.uci === engineBest?.uci);
+  if (engineMove && !moves.some((move) => move.uci === engineMove.uci)) {
+    if (moves.length === 5) moves.pop();
+    moves.push(engineMove);
+  }
+  return moves;
+}
+function comparisonColor(uci) {
+  const index = comparisonMoves().findIndex((move) => move.uci === uci);
+  return index < 0 ? "#b4bbc4" : MOVE_COLORS[index];
+}
+function renderHumanComparison(prediction) {
+  const container = $("dual-human-moves");
+  container.replaceChildren();
+  $("dual-actual-card").hidden = true;
+  $("comparison-more").hidden = prediction.moves.length <= 5;
+  $("comparison-more").textContent = $("move-limit").value === "all" ? "Top 5 moves ⌃" : `All ${prediction.moves.length} legal moves ⌄`;
+  for (const move of limitRows(prediction.moves, "move-limit")) {
+    const row = node("button", "move-prediction comparison-move");
+    row.type = "button";
+    row.dataset.uci = move.uci;
+    row.style.setProperty("--move-color", comparisonColor(move.uci));
+    row.append(node("span", "prediction-san", move.san), node("span", "prediction-percent", `${(move.probability * 100).toFixed(1)}%`));
+    if (move.uci === state.position?.actual_move) {
+      row.classList.add("is-played");
+      row.setAttribute("aria-label", `${move.san}, played in game, ${pct(move.probability)}`);
+    }
+    bindMoveInspection(row, move.uci);
+    container.append(row);
+  }
+}
+function renderComparisonSummary() {
+  const container = $("comparison-summary");
+  const human = state.predictions[0]?.moves?.[0];
+  const engine = state.stockfish?.lines?.[0];
+  container.replaceChildren();
+  const label = node("span", "comparison-label");
+  const text = node("p");
+  if (state.position?.legal_count === 0) {
+    label.textContent = "POSITION COMPLETE";
+    text.textContent = state.position.outcome || "There are no legal moves in this position.";
+  } else if (state.mode === "stockfish") {
+    label.textContent = "ENGINE ANALYSIS";
+    text.textContent = engine ? `Stockfish prefers ${engine.san} at ${engine.score} from White’s perspective. Hover a move to inspect it on the board.` : "Choose your local engine in Engine setup to search this position.";
+  } else if (human && engine) {
+    const same = human.uci === engine.uci;
+    label.textContent = same ? "SHARED FAVORITE" : "DIFFERENT FAVORITES";
+    label.classList.toggle("agrees", same);
+    text.append("Maia favors ", node("strong", "human-text", `${human.san} (${(human.probability * 100).toFixed(1)}%)`), "; Stockfish prefers ", node("strong", "engine-text", `${engine.san} (${engine.score})`), ". ");
+    const engineInPolicy = state.predictions[0].moves.find((move) => move.uci === engine.uci);
+    if (!same && engineInPolicy) text.append(`The engine favorite is Maia’s #${engineInPolicy.rank} choice at ${(engineInPolicy.probability * 100).toFixed(1)}%.`);
+    if (same) text.append("Human choice and engine search agree on the top move.");
+  } else {
+    label.textContent = "HUMAN CHOICE · ENGINE SEARCH";
+    text.textContent = human ? "Choose a Stockfish engine below to compare human choices with engine evaluations." : engine ? "Stockfish is ready. Local Maia analysis is needed to compare human move probabilities." : "Load a position and enable local Maia and Stockfish analysis to compare their favorite moves.";
+  }
+  container.append(label, text);
+}
+function hideMoveInspector() {
+  state.hoverMove = null;
+  const tooltip = $("move-inspector");
+  if (tooltip) tooltip.hidden = true;
+}
+function bindMoveInspection(row, uci) {
+  row.setAttribute("aria-describedby", "move-inspector");
+  const show = () => {
+    if (state.workspaceTab !== "analysis") return;
+    state.hoverMove = uci;
+    renderMoveArrows();
+    const human = state.predictions[0]?.moves.find((move) => move.uci === uci);
+    const line = state.stockfish?.lines?.find((move) => move.uci === uci);
+    const best = state.stockfish?.lines?.[0];
+    const tooltip = $("move-inspector");
+    tooltip.replaceChildren(node("strong", "inspector-move", human?.san || line?.san || uci));
+    for (const [label, value, color] of [
+      ["Maia", human ? pct(human.probability) : "Unavailable", "human-text"],
+      ["SF eval (White)", line?.score || "Not searched", "engine-text"],
+      ["Maia rank", human ? `#${human.rank}` : "—", ""],
+    ]) {
+      const detail = node("div", "inspector-row");
+      detail.append(node("span", color, label), node("strong", "", value));
+      tooltip.append(detail);
+    }
+    if (Number.isFinite(best?.score_cp) && Number.isFinite(line?.score_cp) && best.mate == null && line.mate == null) {
+      const loss = Math.max(0, (best.score_cp - line.score_cp) * (state.position.turn === "white" ? 1 : -1));
+      const detail = node("div", "inspector-row");
+      detail.append(node("span", "engine-text", "Loss vs. best"), node("strong", "", `${(loss / 100).toFixed(2)} pawns`));
+      tooltip.append(detail);
+    }
+    tooltip.hidden = false;
+    const rect = row.getBoundingClientRect();
+    const width = tooltip.offsetWidth;
+    tooltip.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, rect.right + width + 10 < innerWidth ? rect.right + 10 : rect.left - width - 10))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(innerHeight - tooltip.offsetHeight - 8, rect.top))}px`;
+  };
+  const hide = () => { hideMoveInspector(); renderMoveArrows(); };
+  row.addEventListener("pointerenter", show);
+  row.addEventListener("focus", show);
+  row.addEventListener("pointerleave", hide);
+  row.addEventListener("blur", hide);
 }
 function renderTriple(container, predictions) {
   const grid = node("div", "triple-results");
@@ -535,6 +665,7 @@ function renderGauges() {
   renderBoardInsight();
 }
 function renderBoardInsight() {
+  renderComparisonSummary();
   const prediction = state.predictions?.[0];
   const playedUci = state.position?.actual_move;
   const played = prediction?.moves?.find((move) => move.uci === playedUci);
@@ -581,6 +712,7 @@ function renderMoveArrows(predictions = state.predictions) {
   };
   const appendArrow = (uci, color, label, markerId, width = ".12", opacity = ".86", dashed = false) => {
     if (!uci || uci.length < 4) return;
+    if (state.hoverMove && state.hoverMove !== uci) return;
     const [x1, y1] = point(uci.slice(0, 2));
     const [x2, y2] = point(uci.slice(2, 4));
     const attrs = { x1, y1, x2, y2, stroke: color, "stroke-width": width, "stroke-linecap": "round", "marker-end": `url(#${markerId})`, opacity };
@@ -598,17 +730,18 @@ function renderMoveArrows(predictions = state.predictions) {
     }
   } else if (showMaia && state.mode === "dual") {
     const count = $("move-limit").value === "all" ? predictions[0].moves.length : Number($("move-limit").value);
-    for (const move of predictions[0].moves.slice(0, count))
+    const arrowCount = $("analysis-arrows").value === "all" ? count : Math.min(count, Number($("analysis-arrows").value));
+    for (const move of predictions[0].moves.filter((move, index) => state.hoverMove ? move.uci === state.hoverMove : index < arrowCount))
       appendArrow(move.uci, "#ef726b", `Maia ${predictions[0].player_elo}: ${move.san} ${pct(move.probability)}`, "maia-arrowhead", ".12", ".82");
   }
   if (showEngine) {
-    const count = Number($("stockfish-lines-count").value);
+    const count = $("analysis-arrows").value === "all" ? Number($("stockfish-lines-count").value) : Math.min(Number($("stockfish-lines-count").value), Number($("analysis-arrows").value));
     const colors = ["#67aaff", "#78b2fa", "#8dbafa", "#a4c6f5", "#bdd3f4", "#d3e0f3", "#adc7e4", "#9ab8dc", "#86a9d4", "#739bc9", "#618dc0", "#527eaf"];
-    for (const line of state.stockfish.lines.slice(0, count))
+    for (const line of state.stockfish.lines.filter((line, index) => state.hoverMove ? line.uci === state.hoverMove : index < count))
       appendArrow(line.uci, colors[Math.min(line.rank - 1, colors.length - 1)], `Stockfish ${line.rank}: ${line.san} (${line.score} White eval)`, "engine-arrowhead", line.rank === 1 ? ".12" : ".095", line.rank === 1 ? ".95" : ".72");
   }
   const played = state.position?.actual_move;
-  if (played) appendArrow(played, "#e9c85e", `Played in game: ${played}`, "played-arrowhead", ".14", ".98", true);
+  if (played) appendArrow(played, "#9bdff5", `Played in game: ${played}`, "played-arrowhead", ".14", ".98", true);
 }
 
 function createTable(headers, spectrum = false) {
@@ -807,7 +940,10 @@ async function loadRatingComparisonChart(revision) {
     node("span", "stockfish-loading", "Calculating move probabilities across ratings…"),
   );
   try {
-    const result = await api("analyze", { ...payload(), ratings: RATINGS }, controller.signal);
+    const request = $("dual-equal").checked
+      ? { ...payload(), ratings: RATINGS }
+      : { ...payload(), matchups: RATINGS.map((rating) => ({ player_elo: rating, opponent_elo: Number($("dual-opponent-elo").value) })) };
+    const result = await api("analyze", request, controller.signal);
     if (revision !== state.revision || state.mode !== "dual") return;
     state.ratingPredictions = result.predictions;
     renderRatingComparisonChart();
@@ -819,12 +955,13 @@ async function loadRatingComparisonChart(revision) {
   }
 }
 function renderRatingComparisonChart() {
-  const predictions = state.ratingPredictions;
+  const predictions = [...state.ratingPredictions].sort((a, b) => a.player_elo - b.player_elo);
   if (!predictions?.length) return;
-  const currentRating = Number($("elo").value);
-  const nearest = [...predictions].sort((a, b) => Math.abs(a.player_elo - currentRating) - Math.abs(b.player_elo - currentRating))[0];
-  const moves = nearest.moves.slice(0, 5);
-  if (!moves.length) return;
+  const moves = comparisonMoves();
+  if (!moves.length) {
+    $("rating-comparison-chart").replaceChildren(node("p", "chart-empty", "No legal moves to compare in this position."));
+    return;
+  }
   const ns = "http://www.w3.org/2000/svg";
   const make = (tag, attrs = {}, text) => {
     const el = document.createElementNS(ns, tag);
@@ -832,34 +969,116 @@ function renderRatingComparisonChart() {
     if (text !== undefined) el.textContent = text;
     return el;
   };
-  const svg = make("svg", { viewBox: "0 0 360 190", role: "img", "aria-label": "Maia human-move probabilities across ratings" });
-  const colors = ["#f07870", "#69c978", "#70a9ff", "#efb358", "#b88bf0"];
+  const container = $("rating-comparison-chart");
+  container.replaceChildren();
+  const legend = node("div", "rating-chart-legend-controls");
+  const svg = make("svg", { viewBox: "0 0 420 308", role: "group", "aria-label": "Maia move probabilities by Lichess blitz rating" });
+  svg.append(make("title", {}, "Moves by Rating"), make("desc", {}, "Each curve shows one move’s probability. Focus any point for the exact rating and value. Click legend buttons to hide or show curves."));
   const series = moves.map((move, index) => ({
     move,
-    color: colors[index],
+    color: MOVE_COLORS[index],
     values: predictions.map((prediction) => ({
       rating: prediction.player_elo,
       probability: prediction.moves.find((candidate) => candidate.uci === move.uci)?.probability || 0,
     })),
   }));
-  const maximum = Math.max(0.1, ...series.flatMap((item) => item.values.map((point) => point.probability)));
-  const maxTick = Math.min(1, Math.ceil(maximum * 10) / 10);
-  const x = (rating) => 34 + ((rating - 400) / 2600) * 316;
-  const y = (probability) => 145 - probability / maxTick * 112;
-  for (const tick of [0, maxTick / 2, maxTick]) {
-    svg.append(make("line", { x1: 34, x2: 352, y1: y(tick), y2: y(tick), class: "rating-chart-grid" }));
-    svg.append(make("text", { x: 29, y: y(tick) + 3, "text-anchor": "end", class: "rating-chart-axis" }, `${Math.round(tick * 100)}%`));
+  const visible = series.filter((item) => !state.hiddenChartMoves.has(item.move.uci));
+  const maximum = Math.max(0.1, ...visible.flatMap((item) => item.values.map((point) => point.probability)));
+  const maxTick = Math.min(1, Math.ceil(maximum / 0.2) * 0.2);
+  const x = (rating) => 54 + ((rating - 400) / 2600) * 306;
+  const y = (probability) => 258 - probability / maxTick * 226;
+  for (let i = 0; i <= 4; i++) {
+    const tick = maxTick * i / 4;
+    svg.append(make("line", { x1: 54, x2: 360, y1: y(tick), y2: y(tick), class: "rating-chart-grid" }));
+    svg.append(make("text", { x: 46, y: y(tick) + 3, "text-anchor": "end", class: "rating-chart-axis" }, `${Math.round(tick * 100)}%`));
   }
-  for (const rating of [400, 1000, 1600, 2200, 3000])
-    svg.append(make("text", { x: x(rating), y: 161, "text-anchor": "middle", class: "rating-chart-axis" }, String(rating)));
-  series.forEach((item, seriesIndex) => {
-    const d = item.values.map((point, index) => `${index ? "L" : "M"} ${x(point.rating)} ${y(point.probability)}`).join(" ");
-    svg.append(make("path", { d, class: "rating-chart-line", stroke: item.color }));
-    item.values.forEach((point) => svg.append(make("circle", { cx: x(point.rating), cy: y(point.probability), r: "2.2", fill: item.color, class: "rating-chart-dot" })));
-    const legendX = 40 + seriesIndex * 63;
-    svg.append(make("text", { x: legendX, y: 12, class: "rating-chart-legend", fill: item.color }, item.move.san));
+  for (const rating of [400, 800, 1200, 1600, 2000, 2400, 3000]) {
+    svg.append(make("line", { x1: x(rating), x2: x(rating), y1: 32, y2: 258, class: "rating-chart-grid" }));
+    svg.append(make("text", { x: x(rating), y: 277, "text-anchor": "middle", class: "rating-chart-axis" }, String(rating)));
+  }
+  svg.append(make("text", { x: 207, y: 301, "text-anchor": "middle", class: "rating-chart-axis-title" }, "Lichess blitz rating"));
+  svg.append(make("text", { x: 15, y: 145, transform: "rotate(-90 15 145)", "text-anchor": "middle", class: "rating-chart-axis-title human-axis" }, "Maia probability"));
+  svg.append(make("line", { x1: x(Number($("elo").value)), x2: x(Number($("elo").value)), y1: 32, y2: 258, class: "rating-selected-rating" }));
+  const defs = make("defs");
+  svg.append(defs);
+  const endpointLabels = visible.map((item) => ({ item, target: y(item.values.at(-1).probability) })).sort((a, b) => a.target - b.target);
+  endpointLabels.forEach((label, index) => { label.labelY = Math.max(label.target, index ? endpointLabels[index - 1].labelY + 13 : 34); });
+  if (endpointLabels.length) {
+    const overflow = Math.max(0, endpointLabels.at(-1).labelY - 258);
+    endpointLabels.forEach((label) => { label.labelY -= overflow; });
+  }
+  const tooltip = node("div", "rating-chart-tooltip");
+  tooltip.hidden = true;
+  const crosshair = make("line", { x1: 54, x2: 54, y1: 32, y2: 258, class: "rating-chart-crosshair", visibility: "hidden" });
+  const showTooltip = (index) => {
+    const prediction = predictions[index];
+    tooltip.replaceChildren(node("strong", "", `${prediction.player_elo} vs. ${prediction.opponent_elo ?? prediction.player_elo} Elo`));
+    for (const item of visible) {
+      const row = node("div", "chart-tooltip-row");
+      const label = node("span", "", item.move.san);
+      label.style.color = item.color;
+      row.append(label, node("strong", "", pct(item.values[index].probability)));
+      tooltip.append(row);
+    }
+    crosshair.setAttribute("x1", x(prediction.player_elo));
+    crosshair.setAttribute("x2", x(prediction.player_elo));
+    crosshair.setAttribute("visibility", "visible");
+    tooltip.hidden = false;
+    const chartWidth = container.clientWidth;
+    const anchor = x(prediction.player_elo) / 420 * chartWidth;
+    tooltip.style.left = `${Math.max(3, Math.min(chartWidth - tooltip.offsetWidth - 3, anchor + (anchor > chartWidth / 2 ? -tooltip.offsetWidth - 12 : 12)))}px`;
+    tooltip.style.top = `${legend.offsetHeight + 28}px`;
+  };
+  for (const [seriesIndex, item] of series.entries()) {
+    const button = node("button", "chart-legend-button", item.move.san);
+    button.type = "button";
+    button.style.setProperty("--series-color", item.color);
+    button.setAttribute("aria-pressed", String(!state.hiddenChartMoves.has(item.move.uci)));
+    button.title = `Show or hide ${item.move.san}`;
+    button.addEventListener("click", () => {
+      if (state.hiddenChartMoves.has(item.move.uci)) state.hiddenChartMoves.delete(item.move.uci);
+      else state.hiddenChartMoves.add(item.move.uci);
+      renderRatingComparisonChart();
+    });
+    legend.append(button);
+    if (state.hiddenChartMoves.has(item.move.uci)) continue;
+    const gradient = make("linearGradient", { id: `rating-fill-${seriesIndex}`, x1: "0", y1: "0", x2: "0", y2: "1" });
+    gradient.append(make("stop", { offset: "0%", "stop-color": item.color, "stop-opacity": ".23" }), make("stop", { offset: "100%", "stop-color": item.color, "stop-opacity": "0" }));
+    defs.append(gradient);
+    let d = `M ${x(item.values[0].rating)} ${y(item.values[0].probability)}`;
+    item.values.slice(1).forEach((point, index) => {
+      const previous = item.values[index];
+      const middle = (x(previous.rating) + x(point.rating)) / 2;
+      d += ` C ${middle} ${y(previous.probability)}, ${middle} ${y(point.probability)}, ${x(point.rating)} ${y(point.probability)}`;
+    });
+    svg.append(make("path", { d: `${d} L 360 258 L 54 258 Z`, fill: `url(#rating-fill-${seriesIndex})`, class: "rating-chart-area" }));
+    svg.append(make("path", { d, class: "rating-chart-line", stroke: item.color, "data-uci": item.move.uci }));
+    item.values.forEach((point, index) => {
+      const dot = make("circle", { cx: x(point.rating), cy: y(point.probability), r: "3.1", fill: item.color, class: "rating-chart-dot", tabindex: "0", role: "button", "aria-label": `${item.move.san} at ${point.rating} Elo: ${pct(point.probability)}` });
+      dot.append(make("title", {}, `${item.move.san} · ${point.rating}: ${pct(point.probability)}`));
+      dot.addEventListener("focus", () => showTooltip(index));
+      dot.addEventListener("blur", () => { tooltip.hidden = true; crosshair.setAttribute("visibility", "hidden"); });
+      svg.append(dot);
+    });
+    const label = endpointLabels.find((entry) => entry.item === item);
+    svg.append(make("line", { x1: 363, y1: label.target, x2: 370, y2: label.labelY, stroke: item.color, "stroke-opacity": ".5" }));
+    svg.append(make("text", { x: 374, y: label.labelY + 3, class: "rating-chart-end-label", fill: item.color }, item.move.san));
+  }
+  svg.append(crosshair);
+  if (!visible.length) svg.append(make("text", { x: 207, y: 145, "text-anchor": "middle", class: "rating-chart-axis" }, "Choose a move above to show its curve."));
+  svg.addEventListener("pointermove", (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const rating = 400 + (((event.clientX - bounds.left) / bounds.width * 420 - 54) / 306) * 2600;
+    let nearest = 0;
+    predictions.forEach((prediction, index) => { if (Math.abs(prediction.player_elo - rating) < Math.abs(predictions[nearest].player_elo - rating)) nearest = index; });
+    showTooltip(nearest);
   });
-  $("rating-comparison-chart").replaceChildren(svg);
+  svg.addEventListener("pointerleave", () => { tooltip.hidden = true; crosshair.setAttribute("visibility", "hidden"); });
+  container.append(legend, svg, tooltip);
+  const chartSubject = state.stockfish?.lines?.length ? "Top human choices + engine favorite" : "Top human choices";
+  $("rating-chart-context").textContent = $("dual-equal").checked
+    ? `${chartSubject} · equal-rated opponents`
+    : `${chartSubject} · opponent ${$("dual-opponent-elo").value} Elo`;
 }
 function setMode(mode) {
   state.mode = mode;
@@ -915,7 +1134,15 @@ function setWorkspaceTab(tab) {
   });
   document.querySelector(".analysis-panel .panel-heading h2").textContent =
     tab === "analysis" ? "Analysis" : "Human move explorer";
+  placeAnalysisControls();
+  hideMoveInspector();
   setMode(tab === "analysis" ? state.analysisMode : state.maiaMode);
+}
+function placeAnalysisControls() {
+  if (state.workspaceTab === "analysis") $("analysis-control-slot").append($("rating-control"));
+  else document.querySelector(".analysis-panel").insertBefore($("rating-control"), $("triple-controls"));
+  $("analysis-options").hidden = state.workspaceTab !== "analysis";
+  $("analysis-collapse").hidden = state.workspaceTab !== "analysis";
 }
 function setView(view) {
   if (view === "dual") setMode("dual");
@@ -964,11 +1191,38 @@ for (const id of ["rating-a", "rating-b"]) {
   $(id).value = id === "rating-a" ? 1000 : 2400;
   $(id).addEventListener("change", () => scheduleAnalysis());
 }
+$("analysis-rating").replaceChildren(...Array.from({ length: 27 }, (_, index) => {
+  const value = 400 + index * 100;
+  const option = node("option", "", `Maia ${value}: Human Moves`);
+  option.value = value;
+  return option;
+}));
+$("analysis-rating").value = $("elo").value;
+$("analysis-rating").addEventListener("change", () => {
+  $("elo").value = $("analysis-rating").value;
+  $("elo").dispatchEvent(new Event("input"));
+});
+$("analysis-collapse").addEventListener("click", () => {
+  const collapsed = !$("analysis-card").hidden;
+  $("analysis-card").hidden = collapsed;
+  $("analysis-collapse").textContent = collapsed ? "Show" : "Hide";
+  $("analysis-collapse").setAttribute("aria-expanded", String(!collapsed));
+});
+$("analysis-arrows").addEventListener("change", () => renderMoveArrows());
+$("comparison-more").addEventListener("click", () => {
+  $("move-limit").value = $("move-limit").value === "all" ? "5" : "all";
+  renderPredictions();
+  renderMoveArrows();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") { hideMoveInspector(); renderMoveArrows(); }
+});
 $("elo").addEventListener("input", () => {
   $("elo-value").textContent = $("elo").value;
   if ($("dual-equal").checked) $("dual-opponent-elo").value = $("elo").value;
   $("matchup").textContent = `${$("elo").value} vs. ${$("dual-equal").checked ? $("elo").value : $("dual-opponent-elo").value}`;
-  $("human-model-rating").textContent = `${$("elo").value} Elo`;
+  $("human-model-rating").textContent = `Maia ${$("elo").value}: Human Moves`;
+  $("analysis-rating").value = $("elo").value;
   scheduleAnalysis(200);
 });
 $("dual-equal").addEventListener("change", () => {
@@ -1030,8 +1284,8 @@ async function refreshStockfishStatus() {
       ? `${result.name} · ready`
       : result.message || "Not installed · choose an engine executable";
     $("sf-engine-title").textContent = result.available
-      ? `${result.name} · Engine moves`
-      : "Stockfish · Engine moves";
+      ? `${result.name}: Engine Moves`
+      : "Stockfish 19: Engine Moves";
     $("stockfish-analyze").disabled = !result.available;
     if (result.message) $("stockfish-status").title = result.message;
     setStockfishChannelLink();
@@ -1047,19 +1301,22 @@ function renderStockfish(result) {
   const container = $("stockfish-results");
   container.replaceChildren();
   container.classList.toggle("show-variations", $("show-variations").checked);
-  $("sf-engine-title").textContent = `${result.engine} · Engine moves`;
+  $("sf-engine-title").textContent = `${result.engine}: Engine Moves`;
+  $("sf-engine-title").title = result.engine;
+  $("engine-depth").textContent = `d${result.depth}`;
   if (!result.lines.length) {
     container.append(node("div", "stockfish-loading", "This position has no legal moves."));
     return;
   }
-  const summary = node("div", "stockfish-result-summary");
-  summary.append(node("span", "", `${result.engine} · depth ${result.depth}`), node("span", "", "Eval from White’s perspective"));
-  container.append(summary);
   for (const line of result.lines) {
-    const row = node("div", `stockfish-line${line.rank === 1 ? " best" : ""}`);
+    const row = node("button", `stockfish-line${line.rank === 1 ? " best" : ""}`);
+    row.type = "button";
+    row.dataset.uci = line.uci;
+    row.style.setProperty("--move-color", comparisonColor(line.uci));
     row.append(node("span", "engine-rank", String(line.rank).padStart(2, "0")), node("strong", "", line.san || "—"), node("strong", "", line.score));
     row.append(node("span", "engine-pv", line.pv.join(" ")));
-    row.title = `${line.score} · ${line.pv.join(" ")}`;
+    row.setAttribute("aria-label", `${line.san}, Stockfish evaluation ${line.score} from White’s perspective`);
+    bindMoveInspection(row, line.uci);
     container.append(row);
   }
 }
@@ -1092,6 +1349,10 @@ async function analyzeStockfish(force = false) {
     state.stockfish = data;
     state.stockfishPositionKey = key;
     renderStockfish(data);
+    if (state.mode === "dual") {
+      renderPredictions();
+      renderRatingComparisonChart();
+    }
     renderGauges();
     renderMoveArrows();
   } catch (error) {
@@ -1122,7 +1383,7 @@ async function installStockfish(file) {
     state.stockfishAvailable = true;
     state.stockfish = null;
     state.stockfishPositionKey = null;
-    $("sf-engine-title").textContent = `${data.name} · Engine moves`;
+    $("sf-engine-title").textContent = `${data.name}: Engine Moves`;
     $("stockfish-status").textContent = `${data.name} · ready`;
     $("stockfish-channel").value = data.channel;
     $("stockfish-analyze").disabled = false;
@@ -1365,6 +1626,7 @@ if (preview) {
     navigate(0);
   });
 }
+placeAnalysisControls();
 refreshStockfishStatus();
 loadSamples().catch((error) => {
   $("sample-game-select").replaceChildren(node("option", "", "Sample library unavailable"));

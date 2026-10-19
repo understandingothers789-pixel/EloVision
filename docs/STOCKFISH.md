@@ -2,6 +2,10 @@
 
 Maia and Stockfish answer different questions. Maia estimates the moves humans choose at a given Lichess blitz rating. Stockfish searches the position and reports engine evaluations and principal variations. The main **Human + SF** view shows these side by side; **Stockfish** switches to engine-only analysis. Maia’s gauge is the probability of its top predicted human move. Stockfish’s gauge is its evaluation from White’s perspective.
 
+In the **Analysis** workspace, choose the human rating from the Maia column heading. The comparison card shows each model’s favorite and how frequently Maia predicts the engine favorite. Hover or focus a move for its probability, available engine score, rank, and loss versus the best engine line; its arrow is isolated on the board. Moves outside the requested engine lines show “Not searched.” Use **All legal moves** to expand the human list.
+
+**Moves by Rating** plots the top human choices and includes the engine favorite when it falls outside that group. Move colors match the human list and chart legend. Hover the graph or focus a point for exact values; click legend labels to hide or show curves. The horizontal axis is Lichess blitz rating and the vertical axis is Maia move probability. The chart respects the selected opponent rating setting. **Analysis options** contains arrow counts, search depth, line count, variations, and opponent settings. The separate **Maia Explorer** tab keeps the rating columns, comparison matrix, spectrum, and exports.
+
 ## Install a local engine
 
 1. In **Engine setup**, choose **Official Stockfish 19** or **My development build**. Download Stockfish 19 from [stockfishchess.org/download](https://stockfishchess.org/download/), or use the link there to get a current development build from [the Stockfish testing server](https://tests.stockfishchess.org/).

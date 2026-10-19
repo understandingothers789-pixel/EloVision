@@ -37,9 +37,10 @@ def test_browser_real_pgn_navigation_fen_flip_and_slider(page):
     assert "black to move" in page.locator("#board").get_attribute("aria-label")
     assert page.locator('[data-square="e4"] img').get_attribute("alt") == "White pawn on e4"
     assert page.locator(".move-button.selected").text_content() == "e4"
-    page.locator("h1").click()
+    page.locator(".game-panel h2").click()
     page.keyboard.press("ArrowRight")
     assert page.locator(".move-button.selected").text_content() == "e5"
+    page.locator("#analysis-options > summary").click()
     page.locator("#elo").fill("2200")
     assert page.locator("#matchup").text_content() == "2200 vs. 2200"
     assert page.locator(".move-button.selected").text_content() == "e5"
@@ -57,9 +58,11 @@ def test_browser_real_pgn_navigation_fen_flip_and_slider(page):
     assert page.locator("#next").is_disabled()
     assert not errors
     # Both narrow layouts must keep the document within the viewport.
-    for width in [1024, 390]:
-        page.set_viewport_size({"width": width, "height": 900})
-        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    for tab in ["analysis", "explorer"]:
+        page.locator(f"#workspace-{tab}").click()
+        for width in [1024, 390]:
+            page.set_viewport_size({"width": width, "height": 900})
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
 def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, tmp_path):
@@ -161,6 +164,7 @@ def test_browser_does_not_display_stale_analysis(page):
     page.route("**/api/v1/analyze", fixture)
     page.goto(BASE_URL)
     page.get_by_text("Test rating 1800", exact=True).wait_for()
+    page.locator("#analysis-options > summary").click()
     page.locator("#elo").fill("1000")
     page.locator("#elo").fill("2400")
     page.get_by_text("Test rating 2400", exact=True).wait_for()
@@ -170,10 +174,12 @@ def test_browser_does_not_display_stale_analysis(page):
 
 def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     errors = []
+    requested = []
     page.on("pageerror", lambda error: errors.append(str(error)))
 
     def fixture(route):
         data = json.loads(route.request.post_data)
+        requested.append(data)
         board = chess.Board(data["fen"])
         matchups = data.get("matchups") or [
             {"player_elo": rating, "opponent_elo": rating} for rating in data["ratings"]
@@ -249,7 +255,49 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator("#dual-results .dual-column").count() == 2
     assert page.locator("#maia-gauge-marker").text_content().endswith("%")
     assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
+    page.locator(".rating-chart-line").nth(4).wait_for(state="attached")
+    assert page.get_by_text("Maia probability", exact=True).is_visible()
+    assert page.get_by_text("Lichess blitz rating", exact=True).is_visible()
+    assert page.locator(".rating-chart-end-label").count() == 5
+    assert page.locator('.rating-chart-line[data-uci="e2e4"]').count() == 1
+    assert "Stockfish prefers" in page.locator("#comparison-summary").text_content()
+    page.locator(".rating-chart-dot").first.focus()
+    assert "400 vs. 400 Elo" in page.locator(".rating-chart-tooltip").text_content()
+    assert "5.00%" in page.locator(".rating-chart-tooltip").text_content()
+    page.locator(".chart-legend-button").first.click()
+    assert page.locator(".rating-chart-line").count() == 4
+    page.locator(".chart-legend-button").first.click()
+    assert page.locator(".rating-chart-line").count() == 5
+    page.locator("#dual-human-moves .move-prediction").first.focus()
+    assert page.locator("#move-inspector").is_visible()
+    assert "Maia rank" in page.locator("#move-inspector").text_content()
+    page.locator(".stockfish-line").nth(1).focus()
+    assert "0.14 pawns" in page.locator("#move-inspector").text_content()
+    page.locator("#workspace-analysis").focus()
+    assert page.locator("#move-inspector").is_hidden()
+    page.locator("#comparison-more").click()
+    assert page.locator("#dual-human-moves .move-prediction").count() == 20
+    page.locator("#comparison-more").click()
+    assert page.locator("#dual-human-moves .move-prediction").count() == 5
+    page.locator("#analysis-collapse").click()
+    assert page.locator("#analysis-card").is_hidden()
+    assert page.locator(".rating-chart-panel").is_visible()
+    page.locator("#analysis-collapse").click()
+    assert page.locator("#analysis-card").is_visible()
+    page.locator("#analysis-rating").select_option("2400")
+    page.locator("#dual-human-moves .move-prediction").nth(4).wait_for()
+    assert page.locator("#elo").input_value() == "2400"
+    assert page.locator("#human-model-rating").text_content() == "Maia 2400: Human Moves"
     assert page.locator(".stockfish-line .engine-pv").first.is_hidden()
+    page.locator("#analysis-options > summary").click()
+    page.locator(".dual-matchup-menu > summary").click()
+    page.locator("#dual-equal").uncheck()
+    page.locator("#dual-opponent-elo").fill("1200")
+    page.locator("#dual-opponent-elo").press("Tab")
+    page.locator("#rating-chart-context").filter(has_text="opponent 1200 Elo").wait_for()
+    assert requested[-1]["matchups"] == [
+        {"player_elo": rating, "opponent_elo": 1200} for rating in range(400, 3001, 200)
+    ]
     page.locator("#show-variations").check()
     assert page.locator(".stockfish-line .engine-pv").first.is_visible()
     page.locator("#view-stockfish").click()
