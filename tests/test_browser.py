@@ -172,6 +172,44 @@ def test_maia_explorer_matches_analysis_layout_and_keeps_board_in_view(page):
     assert page.locator("#dual-view").is_hidden()
 
 
+def test_analysis_and_explorer_mode_switches_keep_the_right_panel_visible(page):
+    page.goto(BASE_URL)
+    assert page.locator(".analysis-views").is_visible()
+    for view in ("stockfish", "dual"):
+        page.locator(f"#view-{view}").click()
+        assert page.locator("#dual-view").is_visible()
+        assert page.locator("#maia-view").is_hidden()
+
+    page.locator("#workspace-explorer").click()
+    assert page.locator(".analysis-views").is_hidden()
+    assert page.locator("#maia-tabs").is_visible()
+    for mode in ("triple", "explore", "compare", "spectrum"):
+        page.locator(f"#tab-{mode}").click()
+        assert page.locator("#maia-view").is_visible()
+        assert page.locator("#dual-view").is_hidden()
+
+    # A stale or scripted click on an Analysis-only tab must not blank Explorer.
+    page.locator("#view-stockfish").evaluate("element => element.click()")
+    assert page.locator("#maia-view").is_visible()
+
+    page.locator("#workspace-analysis").click()
+    assert page.locator(".analysis-views").is_visible()
+    assert page.locator("#dual-view").is_visible()
+    assert page.locator("#maia-view").is_hidden()
+    page.locator("#view-stockfish").click()
+    assert page.locator("#dual-view").is_visible()
+    assert page.locator(".rating-chart-panel").is_visible()
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.locator("#workspace-explorer").click()
+    assert page.locator(".analysis-views").is_hidden()
+    page.locator("#view-stockfish").evaluate("element => element.click()")
+    assert page.locator("#maia-view").is_visible()
+    board_y = page.locator("#board").bounding_box()["y"]
+    analysis_y = page.locator(".analysis-panel").bounding_box()["y"]
+    game_y = page.locator(".game-panel").bounding_box()["y"]
+    assert board_y < analysis_y < game_y
+
+
 def test_browser_does_not_display_stale_analysis(page):
     calls = []
 

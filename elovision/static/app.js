@@ -1236,6 +1236,7 @@ function restoreEngineSettings() {
   } catch { /* Ignore stale or unavailable browser preferences. */ }
 }
 function setView(view) {
+  if (state.workspaceTab !== "analysis") return;
   if (view === "dual") setMode("dual");
   else if (view === "stockfish") setMode("stockfish");
 }
