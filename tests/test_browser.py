@@ -332,6 +332,9 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert engine_requested[-1]["threads"] == 14
     assert page.locator("#dual-results .dual-column").count() == 2
     page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
+    page.locator("#maia-warmup-status").filter(
+        has_text="Maia ready · 34 positions"
+    ).wait_for()
     page.locator("#whole-game-analyze").wait_for(state="visible")
     expect(page.locator("#whole-game-analyze")).to_be_enabled()
     page.get_by_role("button", name="Analyze Whole Game").click()
@@ -633,15 +636,25 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     page.goto(BASE_URL)
     page.locator("#sample").click()
     expect(page.locator("#next")).to_be_enabled()
+    page.locator("#maia-warmup-status").filter(
+        has_text="Maia ready · 34 positions"
+    ).wait_for()
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
+    def maia_position_requests():
+        return [
+            request for request in maia_requests
+            if "initial_fen" in request and len(request.get("matchups", [])) == 1
+        ]
+
+    maia_requests_after_warmup = len(maia_position_requests())
     page.locator("#next").click()
     assert page.evaluate("window.__elovisionDebouncedNavigation") == []
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
-    expect(page.locator("#probability-total")).to_contain_text("Model pass")
+    expect(page.locator("#probability-total")).to_contain_text("Cached")
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.22").wait_for()
     requests_after_searching_both_positions = len(engine_requests)
-    maia_requests_after_searching_both_positions = len(maia_requests)
+    assert len(maia_position_requests()) == maia_requests_after_warmup
     page.locator("#prev").click()
     assert page.evaluate("window.__elovisionDebouncedNavigation") == []
     expect(page.locator("#dual-human-moves .comparison-move").first).to_be_visible()
@@ -650,7 +663,7 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
     page.wait_for_timeout(200)
     assert len(engine_requests) == requests_after_searching_both_positions
-    assert len(maia_requests) == maia_requests_after_searching_both_positions
+    assert len(maia_position_requests()) == maia_requests_after_warmup
     assert page.locator("#stockfish-results .stockfish-line").count() == 1
 
 

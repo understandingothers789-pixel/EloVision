@@ -26,6 +26,7 @@ const state = {
   stockfish: null,
   stockfishAvailable: false,
   wholeGameController: null,
+  maiaWarmupToken: 0,
   hoverMove: null,
   hiddenChartMoves: new Set(),
   selectedMove: null,
@@ -172,11 +173,13 @@ function analysisRequest() {
   else request.ratings = selectedRatings();
   return request;
 }
-function maiaRequestForPosition(position) {
-  const player = Number($("elo").value);
-  const opponent = $("dual-equal").checked
+function maiaRequestForPosition(
+  position,
+  player = Number($("elo").value),
+  opponent = $("dual-equal").checked
     ? player
-    : Number($("dual-opponent-elo").value);
+    : Number($("dual-opponent-elo").value),
+) {
   return {
     ...position,
     matchups: [{ player_elo: player, opponent_elo: opponent }],
@@ -342,6 +345,52 @@ function renderGame() {
       ),
     );
   navigate(0);
+  startMaiaGameWarmup(game);
+}
+function startMaiaGameWarmup(game) {
+  const token = ++state.maiaWarmupToken;
+  const status = $("maia-warmup-status");
+  if (!game || preview) {
+    status.textContent = "";
+    status.title = "";
+    return;
+  }
+  const player = Number($("elo").value);
+  const opponent = $("dual-equal").checked
+    ? player
+    : Number($("dual-opponent-elo").value);
+  const total = game.positions.length;
+  let completed = 0;
+  status.textContent = `Preparing Maia · 0/${total}`;
+  status.title = `Caching Maia predictions at ${player} vs. ${opponent} Elo`;
+  // Let the currently selected position enqueue first so opening a game stays
+  // responsive, then fill the remaining per-position Maia cache in order.
+  setTimeout(async () => {
+    for (let ply = 0; ply < total; ply += 1) {
+      if (token !== state.maiaWarmupToken || state.game !== game) return;
+      const position = {
+        fen: game.positions[ply].fen,
+        initial_fen: game.initial_fen,
+        moves: game.moves.slice(0, ply).map((move) => move.uci),
+      };
+      try {
+        await api("analyze", maiaRequestForPosition(position, player, opponent));
+        completed += 1;
+        status.textContent = `Maia cached · ${completed}/${total}`;
+      } catch (error) {
+        if (token !== state.maiaWarmupToken || state.game !== game) return;
+        status.textContent = "Maia unavailable";
+        status.title = error.message;
+        $("model-status").textContent = "Model needs attention";
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (token === state.maiaWarmupToken && state.game === game) {
+      status.textContent = `Maia ready · ${completed} positions`;
+      status.title = `Cached ${completed} Maia positions at ${player} vs. ${opponent} Elo`;
+    }
+  }, 0);
 }
 async function importPgn(text) {
   const data = await api("pgn", { pgn: text });
@@ -1928,6 +1977,9 @@ $("fen-form").addEventListener("submit", async (event) => {
     });
     state.position = position;
     state.game = null;
+    state.maiaWarmupToken += 1;
+    $("maia-warmup-status").textContent = "";
+    $("maia-warmup-status").title = "";
     state.ply = 0;
     updateWholeGameButton();
     clearStockfishResult();
