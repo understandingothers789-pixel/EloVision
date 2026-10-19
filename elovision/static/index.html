@@ -217,7 +217,7 @@
           </div>
           <div class="analysis-views" role="tablist" aria-label="Analysis view">
             <button class="view-tab active" id="view-dual" data-view="dual" role="tab" aria-selected="true">Human + SF</button>
-            <button class="view-tab" id="view-stockfish" data-view="stockfish" role="tab" aria-selected="false">Stockfish</button>
+            <button class="view-tab" id="view-stockfish" data-view="stockfish" role="tab" aria-selected="false">SF Only</button>
           </div>
           <div id="maia-tabs" class="tabs" role="tablist" aria-label="Maia analysis mode" hidden>
             <button class="tab" role="tab" aria-selected="false" id="tab-triple" data-mode="triple">Ratings</button>
@@ -301,32 +301,48 @@
             <div class="results-footer"><span id="probability-total">Full legal policy · No sampling</span><div><button id="retry" class="text-button">Retry</button><button id="export-json" class="text-button" disabled>JSON ↧</button><button id="export-csv" class="text-button" disabled>CSV ↧</button></div></div>
             <details class="model-note"><summary>How to read these predictions <span>ⓘ</span></summary><p>These are model predictions of human choices, not measured frequencies or engine evaluations. The most likely move is not necessarily the strongest.</p><p>Maia’s 79-million-parameter model scores all legal moves in a single neural-network pass; it does not search chess variations. The model stays loaded during the session, and repeated positions with the same history and ratings use a local result cache.</p><p>The official code accepts ratings 0–5000. Its API does not establish rating-specific training or evaluation coverage. Interpret the 400 and 3000 extremes with particular caution; ratings are never silently clamped.</p><p id="history-note">PGN history is used when available. A standalone FEN repeats its current position to fill the eight-position input.</p></details>
           </div>
-          <details id="analysis-options" class="analysis-options">
-            <summary><span>⚙︎ <strong>Analysis options</strong></span><span class="options-current">Rating, arrows &amp; variations <span aria-hidden="true">⌄</span></span></summary>
-            <div id="analysis-control-slot"></div>
-            <div class="dual-toolbar">
-              <label>Human moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
-              <label>MultiPV<select id="stockfish-lines-count"><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option><option value="5">5 lines</option><option value="6">6 lines</option><option value="8">8 lines</option><option value="10">10 lines</option><option value="12">12 lines</option><option value="15">15 lines</option><option value="20" selected>20 lines</option><option value="25">25 lines</option><option value="30">30 lines</option><option value="35">35 lines</option><option value="40">40 lines</option></select></label>
-              <label>Hash (GB)<input id="stockfish-hash" type="number" min="1" max="64" step="1" value="8" inputmode="numeric" /></label>
-              <label>Threads<input id="stockfish-threads" type="number" min="1" max="256" step="1" value="14" inputmode="numeric" /></label>
-              <label>Depth<select id="stockfish-depth"><option value="12">12 · quick</option><option value="16" selected>16 · balanced</option><option value="18">18 · deeper</option><option value="20">20 · deepest</option></select></label>
-              <label>Arrows per model<select id="analysis-arrows"><option value="1">Top move</option><option value="3" selected>Top 3</option><option value="5">Top 5</option><option value="all">All displayed</option></select></label>
-              <label class="variation-toggle"><input id="show-variations" type="checkbox" /> Show variations</label>
-              <button id="stockfish-analyze" class="button secondary" disabled>Analyze</button>
+          <section id="analysis-options" class="analysis-options" aria-label="Analysis settings">
+            <div class="settings-tabs" role="tablist" aria-label="Analysis settings tabs">
+              <button id="settings-tab-engine" class="settings-tab" role="tab" aria-selected="false" aria-controls="settings-panel-engine" data-settings-tab="engine">Engine</button>
+              <button id="settings-tab-options" class="settings-tab active" role="tab" aria-selected="true" aria-controls="settings-panel-options" data-settings-tab="options">Options</button>
+              <button id="settings-tab-export" class="settings-tab" role="tab" aria-selected="false" aria-controls="settings-panel-export" data-settings-tab="export">Export</button>
             </div>
-          </details>
-          <details id="stockfish-panel" class="stockfish-panel">
-            <summary><span><strong>Engine setup</strong><small id="stockfish-status">Checking local engine…</small></span><span class="engine-summary-mark">⌄</span></summary>
-            <div class="stockfish-controls">
-              <p id="stockfish-host" class="engine-host"></p>
-              <p id="stockfish-error" class="engine-error" role="alert" hidden></p>
-              <p>Use the official Stockfish 19 release or install your own Stockfish development executable.</p>
-              <label for="stockfish-channel">Build to install</label>
-              <select id="stockfish-channel"><option value="official19">Official Stockfish 19</option><option value="development">My development build</option></select>
-              <div class="engine-install-row"><button id="stockfish-choose" class="text-button">Choose engine file…</button><input id="stockfish-file" type="file" accept=".exe,.bin,*" hidden /><a id="stockfish-download" href="https://stockfishchess.org/download/" target="_blank" rel="noopener">Download Stockfish 19 ↗</a></div>
-              <small class="engine-install-note">Choose the extracted UCI executable for this computer’s operating system and processor. Uploads up to 512 MiB (about 537 MB) are supported. Development builds are available from the official testing server; the executable stays on this computer.</small>
-            </div>
-          </details>
+            <section id="settings-panel-engine" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-engine" hidden>
+              <div class="dual-toolbar engine-toolbar">
+                <label>MultiPV<select id="stockfish-lines-count"><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option><option value="5" selected>5 lines</option></select></label>
+                <label>Hash (GB)<input id="stockfish-hash" type="number" min="1" max="64" step="1" value="8" inputmode="numeric" /></label>
+                <label>Threads<input id="stockfish-threads" type="number" min="1" max="256" step="1" value="14" inputmode="numeric" /></label>
+                <label>Depth<select id="stockfish-depth"><option value="10">10</option><option value="15">15</option><option value="20" selected>20</option><option value="25">25</option><option value="30">30</option><option value="35">35</option><option value="40">40</option></select></label>
+                <button id="stockfish-analyze" class="button secondary" disabled>Analyze</button>
+                <button id="engine-reset-defaults" class="text-button">Restore defaults</button>
+              </div>
+              <details id="stockfish-panel" class="stockfish-panel">
+                <summary><span><strong>Engine setup</strong><small id="stockfish-status">Checking local engine…</small></span><span class="engine-summary-mark">⌄</span></summary>
+                <div class="stockfish-controls">
+                  <p id="stockfish-host" class="engine-host"></p>
+                  <p id="stockfish-error" class="engine-error" role="alert" hidden></p>
+                  <p>Use the official Stockfish 19 release or install your own Stockfish development executable.</p>
+                  <label for="stockfish-channel">Build to install</label>
+                  <select id="stockfish-channel"><option value="official19">Official Stockfish 19</option><option value="development">My development build</option></select>
+                  <div class="engine-install-row"><button id="stockfish-choose" class="text-button">Choose engine file…</button><input id="stockfish-file" type="file" accept=".exe,.bin,*" hidden /><a id="stockfish-download" href="https://stockfishchess.org/download/" target="_blank" rel="noopener">Download Stockfish 19 ↗</a></div>
+                  <small class="engine-install-note">Choose the extracted UCI executable for this computer’s operating system and processor. Uploads up to 512 MiB (about 537 MB) are supported. Development builds are available from the official testing server; the executable stays on this computer.</small>
+                </div>
+              </details>
+            </section>
+            <section id="settings-panel-options" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-options">
+              <div id="analysis-control-slot"></div>
+              <div class="dual-toolbar options-toolbar">
+                <label>Human moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
+                <label>Arrows per model<select id="analysis-arrows"><option value="1">Top move</option><option value="3" selected>Top 3</option><option value="5">Top 5</option><option value="all">All displayed</option></select></label>
+                <label class="variation-toggle"><input id="show-variations" type="checkbox" /> Show variations</label>
+              </div>
+            </section>
+            <section id="settings-panel-export" class="settings-panel export-settings-panel" role="tabpanel" aria-labelledby="settings-tab-export" hidden>
+              <p>Export Maia human-move probabilities for the current position.</p>
+              <button id="export-json-tab" class="button secondary" disabled>JSON ↧</button>
+              <button id="export-csv-tab" class="button secondary" disabled>CSV ↧</button>
+            </section>
+          </section>
         </section>
       </div>
       <footer class="page-footer">

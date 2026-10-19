@@ -227,16 +227,16 @@ class StockfishService:
     def analyze(
         self,
         request: PredictionRequest,
-        depth: int = 16,
-        multipv: int = 20,
+        depth: int = 20,
+        multipv: int = 5,
         hash_mb: int = 8192,
         threads: int = 14,
     ):
-        if not 10 <= depth <= 22:
-            raise VisionError("stockfish_depth", "Choose a search depth between 10 and 22.", 422)
-        if not 1 <= multipv <= 40:
+        if not 10 <= depth <= 40:
+            raise VisionError("stockfish_depth", "Choose a search depth between 10 and 40.", 422)
+        if not 1 <= multipv <= 5:
             raise VisionError(
-                "stockfish_multipv", "Request between one and forty engine lines.", 422
+                "stockfish_multipv", "Request between one and five engine lines.", 422
             )
         if not 1 <= hash_mb <= 65536:
             raise VisionError("stockfish_hash", "Choose a hash size between 1 MiB and 64 GiB.", 422)
@@ -341,7 +341,7 @@ class StockfishService:
                 score_text = "—"
             line_board = board.copy(stack=True)
             pv_san = []
-            for move in pv[:10]:
+            for move in pv:
                 pv_san.append(line_board.san(move))
                 line_board.push(move)
             lines.append(

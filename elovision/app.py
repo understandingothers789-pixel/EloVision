@@ -68,8 +68,8 @@ class PgnInput(BaseModel):
 
 
 class StockfishInput(PositionInput):
-    depth: int = Field(default=16, ge=10, le=22)
-    multipv: int = Field(default=20, ge=1, le=40)
+    depth: int = Field(default=20, ge=10, le=40)
+    multipv: int = Field(default=5, ge=1, le=5)
     hash_mb: int = Field(default=8192, ge=1, le=65536)
     threads: int = Field(default=14, ge=1, le=256)
 

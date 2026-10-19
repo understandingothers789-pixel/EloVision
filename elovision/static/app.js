@@ -328,6 +328,11 @@ function scheduleAnalysis(delay = 0) {
     $("rating-comparison-chart").replaceChildren(
       node("span", "stockfish-loading", "Updating rating comparison…"),
     );
+  } else if (state.mode === "stockfish") {
+    state.ratingPredictions = [];
+    $("rating-comparison-chart").replaceChildren(
+      node("span", "stockfish-loading", "Updating rating comparison…"),
+    );
   }
   $("dual-human-moves").replaceChildren(node("div", "stockfish-loading", "Waiting for Maia analysis…"));
   $("results").replaceChildren();
@@ -335,7 +340,7 @@ function scheduleAnalysis(delay = 0) {
   $("dual-actual-card").hidden = true;
   $("comparison-more").hidden = true;
   $("spectrum-chart").hidden = true;
-  $("export-json").disabled = $("export-csv").disabled = true;
+  setExportButtonsDisabled(true);
   renderGauges();
   renderMoveArrows();
   if (state.mode === "stockfish") {
@@ -343,6 +348,7 @@ function scheduleAnalysis(delay = 0) {
     $("analysis-indicator").textContent = state.stockfishAvailable ? "STOCKFISH" : "ENGINE NEEDED";
     if (state.stockfishAvailable) state.timer = setTimeout(() => analyzeStockfish(), delay);
     else engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
+    loadRatingComparisonChart(revision);
     return;
   }
   $("loading").hidden = state.mode === "dual";
@@ -353,6 +359,10 @@ function scheduleAnalysis(delay = 0) {
     if (state.mode === "dual" && state.stockfishAvailable && !state.stockfish)
       analyzeStockfish();
   }, delay);
+}
+function setExportButtonsDisabled(disabled) {
+  for (const id of ["export-json", "export-csv", "export-json-tab", "export-csv-tab"])
+    $(id).disabled = disabled;
 }
 async function analyze(revision) {
   const controller = new AbortController();
@@ -366,7 +376,7 @@ async function analyze(revision) {
     if (revision !== state.revision) return;
     state.predictions = data.predictions;
     renderPredictions();
-    $("export-json").disabled = $("export-csv").disabled = false;
+    setExportButtonsDisabled(false);
     $("analysis-indicator").textContent = data.predictions.every(
       (p) => p.cached,
     )
@@ -939,7 +949,7 @@ function renderChart() {
   $("chart").replaceChildren(svg);
 }
 async function loadRatingComparisonChart(revision) {
-  if (preview || state.mode !== "dual") return;
+  if (preview || !["dual", "stockfish"].includes(state.mode)) return;
   const controller = new AbortController();
   state.chartController = controller;
   $("rating-comparison-chart").replaceChildren(
@@ -950,7 +960,7 @@ async function loadRatingComparisonChart(revision) {
       ? { ...payload(), ratings: RATINGS }
       : { ...payload(), matchups: RATINGS.map((rating) => ({ player_elo: rating, opponent_elo: Number($("dual-opponent-elo").value) })) };
     const result = await api("analyze", request, controller.signal);
-    if (revision !== state.revision || state.mode !== "dual") return;
+    if (revision !== state.revision || !["dual", "stockfish"].includes(state.mode)) return;
     state.ratingPredictions = result.predictions;
     renderRatingComparisonChart();
   } catch (error) {
@@ -1105,12 +1115,13 @@ function setMode(mode) {
   $("dual-view").hidden = state.workspaceTab !== "analysis" || view === "maia";
   $("maia-view").hidden = state.workspaceTab !== "explorer" || view !== "maia";
   $("dual-results").classList.toggle("pure-stockfish", view === "stockfish");
-  document.querySelector(".dual-toolbar").classList.toggle("pure-stockfish", view === "stockfish");
-  $("rating-control").hidden = mode === "stockfish" || mode === "triple" || mode === "compare" || mode === "spectrum";
+  $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked || view === "stockfish");
+  document.querySelector(".dual-toolbar").classList.remove("pure-stockfish");
+  $("rating-control").hidden = mode === "triple" || mode === "compare" || mode === "spectrum";
   $("triple-controls").hidden = mode !== "triple";
   $("compare-controls").hidden = mode !== "compare";
   $("limit-label").hidden = mode === "spectrum";
-  $("rating-comparison-chart").closest(".rating-chart-panel").hidden = view !== "dual";
+  $("rating-comparison-chart").closest(".rating-chart-panel").hidden = view === "maia";
   $("analysis-indicator").textContent = view === "stockfish" ? "STOCKFISH" : view === "dual" ? "MAIA + SF" : "MAIA 3";
   $("results-title").textContent = {
     triple: "Top moves by rating",
@@ -1150,13 +1161,47 @@ function placeAnalysisControls() {
   $("analysis-options").hidden = state.workspaceTab !== "analysis";
   $("analysis-collapse").hidden = state.workspaceTab !== "analysis";
 }
+function setSettingsTab(tab) {
+  if (!["engine", "options", "export"].includes(tab)) return;
+  for (const name of ["engine", "options", "export"]) {
+    const active = name === tab;
+    const button = $("settings-tab-" + name);
+    const panel = $("settings-panel-" + name);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    panel.hidden = !active;
+  }
+}
+const DEFAULT_ENGINE_SETTINGS = { multipv: 5, hash: 8, threads: 14, depth: 20, variations: false };
+const ENGINE_SETTINGS_KEY = "elovision-engine-settings-v1";
+function saveEngineSettings() {
+  const settings = {
+    multipv: Number($("stockfish-lines-count").value),
+    hash: Number($("stockfish-hash").value),
+    threads: Number($("stockfish-threads").value),
+    depth: Number($("stockfish-depth").value),
+    variations: $("show-variations").checked,
+  };
+  try { localStorage.setItem(ENGINE_SETTINGS_KEY, JSON.stringify(settings)); } catch { /* Optional preference storage. */ }
+}
+function restoreEngineSettings() {
+  try {
+    const settings = JSON.parse(localStorage.getItem(ENGINE_SETTINGS_KEY) || "null");
+    if (!settings || typeof settings !== "object") return;
+    if ([1, 2, 3, 4, 5].includes(settings.multipv)) $("stockfish-lines-count").value = String(settings.multipv);
+    if (Number.isInteger(settings.hash) && settings.hash >= 1 && settings.hash <= 64) $("stockfish-hash").value = String(settings.hash);
+    if (Number.isInteger(settings.threads) && settings.threads >= 1 && settings.threads <= 256) $("stockfish-threads").value = String(settings.threads);
+    if ([10, 15, 20, 25, 30, 35, 40].includes(settings.depth)) $("stockfish-depth").value = String(settings.depth);
+    if (typeof settings.variations === "boolean") $("show-variations").checked = settings.variations;
+  } catch { /* Ignore stale or unavailable browser preferences. */ }
+}
 function setView(view) {
   if (view === "dual") setMode("dual");
   else if (view === "stockfish") setMode("stockfish");
 }
 async function exportResults(format) {
-  const button = $("export-" + format);
-  button.disabled = true;
+  setExportButtonsDisabled(true);
   try {
     const response = await fetch(localUrl("api/v1/export"), {
       method: "POST",
@@ -1182,7 +1227,7 @@ async function exportResults(format) {
   } catch (error) {
     alert(error.message);
   } finally {
-    button.disabled = !state.predictions.length;
+    setExportButtonsDisabled(!state.predictions.length);
   }
 }
 
@@ -1259,12 +1304,15 @@ $("move-limit").addEventListener("change", () => {
 });
 $("maia-move-limit").addEventListener("change", renderPredictions);
 $("show-variations").addEventListener("change", () => {
-  $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked);
+  $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked || state.mode === "stockfish");
+  saveEngineSettings();
 });
-$("stockfish-depth").addEventListener("change", () => analyzeStockfish(true));
-$("stockfish-lines-count").addEventListener("change", () => analyzeStockfish(true));
-$("stockfish-hash").addEventListener("change", () => analyzeStockfish(true));
-$("stockfish-threads").addEventListener("change", () => analyzeStockfish(true));
+for (const id of ["stockfish-depth", "stockfish-lines-count", "stockfish-hash", "stockfish-threads"]) {
+  $(id).addEventListener("change", () => {
+    saveEngineSettings();
+    analyzeStockfish(true);
+  });
+}
 function updateWholeGameButton() {
   const button = $("whole-game-analyze");
   if (!button) return;
@@ -1295,7 +1343,10 @@ function stockfishError(message = "") {
   const panel = $("stockfish-panel");
   $("stockfish-error").textContent = message;
   $("stockfish-error").hidden = !message;
-  if (message) panel.open = true;
+  if (message) {
+    panel.open = true;
+    setSettingsTab("engine");
+  }
 }
 function setStockfishChannelLink() {
   const development = $("stockfish-channel").value === "development";
@@ -1341,7 +1392,7 @@ async function refreshStockfishStatus() {
 function renderStockfish(result) {
   const container = $("stockfish-results");
   container.replaceChildren();
-  container.classList.toggle("show-variations", $("show-variations").checked);
+  container.classList.toggle("show-variations", $("show-variations").checked || state.mode === "stockfish");
   $("sf-engine-title").textContent = `${result.engine}: Engine Moves`;
   $("sf-engine-title").title = result.engine;
   $("engine-depth").textContent = `d${result.depth}`;
@@ -1388,6 +1439,8 @@ function showStockfishResult(result, key, remember = true, refreshHuman = true) 
   }
   renderGauges();
   renderMoveArrows();
+  if (["dual", "stockfish"].includes(state.mode) && state.ratingPredictions.length)
+    renderRatingComparisonChart();
 }
 async function analyzeWholeGame() {
   if (state.wholeGameController) {
@@ -1575,6 +1628,19 @@ async function installStockfish(file) {
 }
 $("stockfish-analyze").addEventListener("click", () => analyzeStockfish(true));
 $("whole-game-analyze").addEventListener("click", analyzeWholeGame);
+$("engine-reset-defaults").addEventListener("click", () => {
+  $("stockfish-lines-count").value = String(DEFAULT_ENGINE_SETTINGS.multipv);
+  $("stockfish-hash").value = String(DEFAULT_ENGINE_SETTINGS.hash);
+  $("stockfish-threads").value = String(DEFAULT_ENGINE_SETTINGS.threads);
+  $("stockfish-depth").value = String(DEFAULT_ENGINE_SETTINGS.depth);
+  $("show-variations").checked = DEFAULT_ENGINE_SETTINGS.variations;
+  $("stockfish-results").classList.toggle("show-variations", state.mode === "stockfish");
+  saveEngineSettings();
+  analyzeStockfish(true);
+});
+document.querySelectorAll(".settings-tab").forEach((tab) =>
+  tab.addEventListener("click", () => setSettingsTab(tab.dataset.settingsTab)),
+);
 $("stockfish-choose").addEventListener("click", () => $("stockfish-file").click());
 $("stockfish-file").addEventListener("change", (event) => installStockfish(event.target.files[0]));
 function generatedRatings(count, requestedSpacing) {
@@ -1786,6 +1852,8 @@ $("fen-form").addEventListener("submit", async (event) => {
 });
 $("export-json").addEventListener("click", () => exportResults("json"));
 $("export-csv").addEventListener("click", () => exportResults("csv"));
+$("export-json-tab").addEventListener("click", () => exportResults("json"));
+$("export-csv-tab").addEventListener("click", () => exportResults("csv"));
 if (preview) {
   $("import").disabled = true;
   $("stockfish-analyze").disabled = true;
@@ -1803,6 +1871,7 @@ if (preview) {
   });
 }
 placeAnalysisControls();
+restoreEngineSettings();
 refreshStockfishStatus();
 loadSamples().catch((error) => {
   $("sample-game-select").replaceChildren(node("option", "", "Sample library unavailable"));

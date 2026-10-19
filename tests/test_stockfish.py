@@ -12,6 +12,7 @@ from elovision.stockfish import MAX_ENGINE_BYTES, MAX_ENGINE_SIZE_LABEL, Stockfi
 FAKE_STOCKFISH = f"""#!{sys.executable}
 import os
 import sys
+multipv = 1
 for raw in sys.stdin:
     line = raw.strip()
     if line == "uci":
@@ -23,21 +24,21 @@ for raw in sys.stdin:
     elif line == "isready":
         print("readyok", flush=True)
     elif line.startswith("setoption"):
+        if line.startswith("setoption name MultiPV value "):
+            multipv = int(line.rsplit(" ", 1)[1])
         with open(os.environ["ELOVISION_TEST_UCI_LOG"], "a", encoding="utf-8") as log:
             log.write(line + "\\n")
     elif line.startswith("go "):
-        print("info depth 16 multipv 1 score cp 35 pv e2e4", flush=True)
-        print("info depth 16 multipv 2 score cp 21 pv d2d4", flush=True)
-        print("info depth 16 multipv 3 score cp 12 pv g1f3", flush=True)
-        print("info depth 16 multipv 4 score cp 10 pv b1c3", flush=True)
-        print("info depth 16 multipv 5 score cp 9 pv b1a3", flush=True)
-        print("info depth 16 multipv 6 score cp 8 pv g1h3", flush=True)
-        remaining_moves = (
-            "a2a3", "a2a4", "b2b3", "b2b4", "c2c3", "c2c4", "d2d3",
-            "e2e3", "f2f3", "f2f4", "g2g3", "g2g4", "h2h3", "h2h4",
+        moves = (
+            "e2e4", "d2d4", "g1f3", "b1c3", "b1a3", "g1h3", "a2a3", "a2a4",
+            "b2b3", "b2b4", "c2c3", "c2c4", "d2d3", "e2e3", "f2f3", "f2f4",
+            "g2g3", "g2g4", "h2h3", "h2h4",
         )
-        for index, move in enumerate(remaining_moves, 7):
-            print(f"info depth 16 multipv {{index}} score cp 5 pv {{move}}", flush=True)
+        scores = (35, 21, 12, 10, 9, 8)
+        for index, move in enumerate(moves[:multipv], 1):
+            score = scores[index - 1] if index <= len(scores) else 5
+            pv = "e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7 f1e1" if index == 1 else move
+            print(f"info depth 16 multipv {{index}} score cp {{score}} pv {{pv}}", flush=True)
         print("bestmove e2e4", flush=True)
     elif line == "quit":
         break
@@ -70,19 +71,26 @@ def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
         result = response.json()
         assert [line["san"] for line in result["lines"][:3]] == ["e4", "d4", "Nf3"]
         assert [line["score"] for line in result["lines"][:3]] == ["+0.35", "+0.21", "+0.12"]
+        assert result["lines"][0]["pv"] == [
+            "e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1"
+        ]
         assert result["channel"] == "official19"
         configured = uci_log.read_text(encoding="utf-8")
         assert "setoption name Threads value 14" in configured
         assert "setoption name Hash value 8192" in configured
         wide = client.post(
             "/api/v1/engine/analyze",
-            json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 40},
+            json={"fen": chess.STARTING_FEN, "depth": 40, "multipv": 5},
         )
         assert wide.status_code == 200, wide.text
-        assert len(wide.json()["lines"]) == 20
+        assert len(wide.json()["lines"]) == 5
         assert client.post(
             "/api/v1/engine/analyze",
-            json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 41},
+            json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 6},
+        ).status_code == 422
+        assert client.post(
+            "/api/v1/engine/analyze",
+            json={"fen": chess.STARTING_FEN, "depth": 41, "multipv": 5},
         ).status_code == 422
 
 

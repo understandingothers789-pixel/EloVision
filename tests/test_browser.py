@@ -40,7 +40,7 @@ def test_browser_real_pgn_navigation_fen_flip_and_slider(page):
     page.locator(".game-panel h2").click()
     page.keyboard.press("ArrowRight")
     assert page.locator(".move-button.selected").text_content() == "e5"
-    page.locator("#analysis-options > summary").click()
+    page.locator("#settings-tab-options").click()
     page.locator("#elo").fill("2200")
     assert page.locator("#matchup").text_content() == "2200 vs. 2200"
     assert page.locator(".move-button.selected").text_content() == "e5"
@@ -164,7 +164,7 @@ def test_browser_does_not_display_stale_analysis(page):
     page.route("**/api/v1/analyze", fixture)
     page.goto(BASE_URL)
     page.get_by_text("Test rating 1800", exact=True).wait_for()
-    page.locator("#analysis-options > summary").click()
+    page.locator("#settings-tab-options").click()
     page.locator("#elo").fill("1000")
     page.locator("#elo").fill("2400")
     page.get_by_text("Test rating 2400", exact=True).wait_for()
@@ -258,10 +258,16 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.goto(BASE_URL)
     page.locator("#dual-human-moves .move-prediction").nth(4).wait_for()
     page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
-    assert page.locator("#stockfish-lines-count").input_value() == "20"
+    assert page.locator("#stockfish-lines-count").input_value() == "5"
+    assert page.locator("#stockfish-depth").input_value() == "20"
+    assert page.locator("#stockfish-lines-count option").count() == 5
+    assert page.locator("#stockfish-depth option").all_text_contents() == [
+        "10", "15", "20", "25", "30", "35", "40"
+    ]
     assert page.locator("#stockfish-hash").input_value() == "8"
     assert page.locator("#stockfish-threads").input_value() == "14"
-    assert engine_requested[-1]["multipv"] == 20
+    assert engine_requested[-1]["multipv"] == 5
+    assert engine_requested[-1]["depth"] == 20
     assert engine_requested[-1]["hash_mb"] == 8192
     assert engine_requested[-1]["threads"] == 14
     assert page.locator("#dual-results .dual-column").count() == 2
@@ -272,7 +278,7 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#whole-game-status").filter(
         has_text="Complete · 34 positions analyzed"
     ).wait_for()
-    assert all(item["multipv"] == 20 for item in engine_requested)
+    assert all(item["multipv"] == 5 for item in engine_requested)
     assert page.locator("#maia-gauge-marker").text_content().endswith("%")
     assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
     page.locator(".rating-chart-line").nth(4).wait_for(state="attached")
@@ -309,7 +315,7 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator("#elo").input_value() == "2400"
     assert page.locator("#human-model-rating").text_content() == "Maia 2400: Human Moves"
     assert page.locator(".stockfish-line .engine-pv").first.is_hidden()
-    page.locator("#analysis-options > summary").click()
+    page.locator("#settings-tab-options").click()
     page.locator(".dual-matchup-menu > summary").click()
     page.locator("#dual-equal").uncheck()
     page.locator("#dual-opponent-elo").fill("1200")
@@ -323,14 +329,23 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#view-stockfish").click()
     assert "pure-stockfish" in page.locator("#dual-results").get_attribute("class")
     assert page.locator(".human-column").is_hidden()
+    assert page.locator(".rating-chart-panel").is_visible()
+    assert page.locator(".stockfish-line .engine-pv").first.is_visible()
     page.locator("#view-dual").click()
     assert "pure-stockfish" not in page.locator("#dual-results").get_attribute("class")
     assert page.locator(".human-column").is_visible()
+    page.locator("#settings-tab-engine").click()
+    assert page.locator("#settings-panel-engine").is_visible()
+    assert page.locator("#settings-panel-options").is_hidden()
+    page.locator("#settings-tab-export").click()
+    assert page.locator("#settings-panel-export").is_visible()
+    page.locator("#settings-tab-options").click()
     page.locator("#fen-open").click()
     page.locator("#fen-input").fill(chess.STARTING_FEN)
     page.get_by_role("button", name="Explore position").click()
     page.locator("#fen-dialog").wait_for(state="hidden")
     assert page.locator("#whole-game-analyze").is_disabled()
+    page.locator("#settings-tab-engine").click()
     page.locator("#stockfish-panel > summary").click()
     assert page.locator("#stockfish-channel").is_visible()
     assert (
@@ -340,6 +355,28 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#stockfish-channel").select_option("development")
     assert "tests.stockfishchess.org" in page.locator("#stockfish-download").get_attribute("href")
     assert not errors
+
+
+def test_browser_engine_settings_persist_and_restore_defaults(page):
+    page.goto(BASE_URL)
+    page.locator("#settings-tab-engine").click()
+    page.locator("#stockfish-lines-count").select_option("3")
+    page.locator("#stockfish-depth").select_option("30")
+    page.locator("#stockfish-hash").fill("6")
+    page.locator("#stockfish-hash").press("Tab")
+    page.locator("#stockfish-threads").fill("10")
+    page.locator("#stockfish-threads").press("Tab")
+    page.reload()
+    page.locator("#settings-tab-engine").click()
+    assert page.locator("#stockfish-lines-count").input_value() == "3"
+    assert page.locator("#stockfish-depth").input_value() == "30"
+    assert page.locator("#stockfish-hash").input_value() == "6"
+    assert page.locator("#stockfish-threads").input_value() == "10"
+    page.locator("#engine-reset-defaults").click()
+    assert page.locator("#stockfish-lines-count").input_value() == "5"
+    assert page.locator("#stockfish-depth").input_value() == "20"
+    assert page.locator("#stockfish-hash").input_value() == "8"
+    assert page.locator("#stockfish-threads").input_value() == "14"
 
 
 def test_browser_shows_stockfish_install_error_in_engine_setup(page):
@@ -367,6 +404,7 @@ def test_browser_shows_stockfish_install_error_in_engine_setup(page):
         ),
     )
     page.goto(BASE_URL)
+    page.locator("#settings-tab-engine").click()
     page.locator("#stockfish-panel > summary").click()
     page.locator("#stockfish-file").evaluate(
         "input => { const transfer = new DataTransfer(); "
@@ -412,6 +450,7 @@ def test_browser_failed_stockfish_replacement_keeps_existing_engine(page):
         ),
     )
     page.goto(BASE_URL)
+    page.locator("#settings-tab-engine").click()
     expect(page.locator("#stockfish-analyze")).to_be_enabled()
     page.locator("#stockfish-panel > summary").click()
     page.locator("#stockfish-file").evaluate(
@@ -538,7 +577,7 @@ def test_browser_upload_accepts_150_mib_engine_file(page):
 
     page.route("**/api/v1/engine/install", install)
     page.goto(BASE_URL)
-    page.locator("#workspace-explorer").click()
+    page.locator("#settings-tab-engine").click()
     page.locator("#stockfish-panel summary").click()
     page.locator("#stockfish-file").evaluate(
         "input => { const file = new File(['MZ'], "
