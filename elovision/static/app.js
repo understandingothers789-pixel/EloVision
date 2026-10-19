@@ -20,13 +20,17 @@ const state = {
   maiaMode: "triple",
   ratingPredictions: [],
   maiaCache: new Map(),
+  maiaInFlight: new Map(),
   stockfishPositionKey: null,
   stockfishCache: new Map(),
   predictions: [],
   stockfish: null,
   stockfishAvailable: false,
   wholeGameController: null,
+  wholeGameGame: null,
+  wholeGameRequestController: null,
   maiaWarmupToken: 0,
+  maiaWarmupController: null,
   stockfishInFlight: null,
   stockfishInFlightKey: null,
   stockfishRequestToken: null,
@@ -71,7 +75,41 @@ function readMaiaCache(data) {
     })),
   };
 }
+function waitForMaia(entry, signal) {
+  if (signal?.aborted) return Promise.reject(new DOMException("The request was aborted.", "AbortError"));
+  entry.consumers += 1;
+  entry.cancelled = false;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const release = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      entry.consumers -= 1;
+      if (!entry.started && entry.consumers === 0) entry.cancelled = true;
+    };
+    const abort = () => {
+      release();
+      reject(new DOMException("The request was aborted.", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    entry.promise.then(
+      (result) => {
+        if (settled) return;
+        release();
+        resolve(result);
+      },
+      (error) => {
+        if (settled) return;
+        release();
+        reject(error);
+      },
+    );
+  });
+}
 async function api(path, data, signal) {
+  if (signal?.aborted)
+    throw new DOMException("The request was aborted.", "AbortError");
   if (preview) {
     if (path === "health") return { loaded: false, installed: false };
     if (path === "engine/status") return { available: false, message: "Stockfish analysis requires the installed local app." };
@@ -96,9 +134,13 @@ async function api(path, data, signal) {
   if (cacheKey) {
     const cached = readMaiaCache(data);
     if (cached) return cached;
+    const pending = state.maiaInFlight.get(cacheKey);
+    if (pending) return waitForMaia(pending, signal);
   }
-  const request = async () => {
-    if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError");
+  const request = async (entry = null) => {
+    if (entry?.cancelled && entry.consumers === 0)
+      throw new DOMException("The request was aborted.", "AbortError");
+    if (entry) entry.started = true;
     if (cacheKey) {
       const cached = readMaiaCache(data);
       if (cached) return cached;
@@ -111,7 +153,6 @@ async function api(path, data, signal) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
-            signal,
           },
     );
     if (!response.ok) {
@@ -126,7 +167,7 @@ async function api(path, data, signal) {
     const result = await response.json();
     if (cacheKey && Array.isArray(result.predictions)) {
       state.maiaCache.set(cacheKey, structuredClone(result));
-      while (state.maiaCache.size > 256)
+      while (state.maiaCache.size > 4096)
         state.maiaCache.delete(state.maiaCache.keys().next().value);
     }
     return result;
@@ -135,9 +176,16 @@ async function api(path, data, signal) {
   // The backend intentionally runs one Maia inference task at a time. Queue
   // client requests so parallel Stockfish/whole-game work cannot make Maia
   // return a transient 429 and leave holes in its position cache.
-  const queued = maiaRequestQueue.catch(() => {}).then(request);
+  const entry = { consumers: 0, started: false, cancelled: false, promise: null };
+  const queued = maiaRequestQueue.catch(() => {}).then(() => request(entry));
+  entry.promise = queued;
+  state.maiaInFlight.set(cacheKey, entry);
+  queued.then(
+    () => { if (state.maiaInFlight.get(cacheKey) === entry) state.maiaInFlight.delete(cacheKey); },
+    () => { if (state.maiaInFlight.get(cacheKey) === entry) state.maiaInFlight.delete(cacheKey); },
+  );
   maiaRequestQueue = queued.then(() => undefined, () => undefined);
-  return queued;
+  return waitForMaia(entry, signal);
 }
 function payload() {
   const base = { fen: state.position.fen };
@@ -290,6 +338,7 @@ function navigate(ply) {
 }
 function renderGame() {
   const game = state.game;
+  cancelGameScopedAnalysis(game);
   updateWholeGameButton();
   const meta = $("game-meta");
   meta.replaceChildren();
@@ -352,6 +401,9 @@ function renderGame() {
 }
 function startMaiaGameWarmup(game) {
   const token = ++state.maiaWarmupToken;
+  state.maiaWarmupController?.abort();
+  const controller = new AbortController();
+  state.maiaWarmupController = controller;
   const status = $("maia-warmup-status");
   if (!game || preview) {
     status.textContent = "";
@@ -377,10 +429,16 @@ function startMaiaGameWarmup(game) {
         moves: game.moves.slice(0, ply).map((move) => move.uci),
       };
       try {
-        await api("analyze", maiaRequestForPosition(position, player, opponent));
+        await api(
+          "analyze",
+          maiaRequestForPosition(position, player, opponent),
+          controller.signal,
+        );
+        if (token !== state.maiaWarmupToken || state.game !== game) return;
         completed += 1;
         status.textContent = `Maia cached · ${completed}/${total}`;
       } catch (error) {
+        if (error.name === "AbortError") return;
         if (token !== state.maiaWarmupToken || state.game !== game) return;
         status.textContent = "Maia unavailable";
         status.title = error.message;
@@ -394,6 +452,22 @@ function startMaiaGameWarmup(game) {
       status.title = `Cached ${completed} Maia positions at ${player} vs. ${opponent} Elo`;
     }
   }, 0);
+}
+function cancelGameScopedAnalysis(nextGame) {
+  if (state.maiaWarmupController) {
+    state.maiaWarmupController.abort();
+    state.maiaWarmupController = null;
+  }
+  if (state.wholeGameController && state.wholeGameGame !== nextGame) {
+    state.wholeGameController.abort();
+    state.wholeGameRequestController?.abort();
+    state.wholeGameController = null;
+    state.wholeGameGame = null;
+    state.wholeGameRequestController = null;
+    fetch(localUrl("api/v1/engine/cancel"), { method: "POST" }).catch(() => {});
+    $("whole-game-status").textContent = "";
+    updateWholeGameButton();
+  }
 }
 async function importPgn(text) {
   const data = await api("pgn", { pgn: text });
@@ -1596,6 +1670,7 @@ async function analyzeWholeGame() {
   }
   const controller = new AbortController();
   state.wholeGameController = controller;
+  state.wholeGameGame = game;
   updateWholeGameButton();
   const total = game.positions.length;
   let completed = 0;
@@ -1605,34 +1680,47 @@ async function analyzeWholeGame() {
     // The first whole-game request supersedes a one-position search. The API
     // stops the old UCI search and returns its best-so-far lines to its caller.
     for (let ply = 0; ply < total; ply += 1) {
-      if (controller.signal.aborted) break;
+      if (controller.signal.aborted || state.game !== game) break;
       const positionPayload = {
         fen: game.positions[ply].fen,
         initial_fen: game.initial_fen,
         moves: game.moves.slice(0, ply).map((move) => move.uci),
       };
       const key = stockfishRequestKey(positionPayload, settings);
-      $("whole-game-status").textContent = `Analyzing position ${ply + 1} of ${total} · Maia + Stockfish · depth ${settings.depth}, MultiPV ${settings.multipv}`;
+      if (state.wholeGameController === controller)
+        $("whole-game-status").textContent = `Analyzing position ${ply + 1} of ${total} · Maia + Stockfish · depth ${settings.depth}, MultiPV ${settings.multipv}`;
       const cachedEngine = state.stockfishCache.get(key);
+      if (cachedEngine) {
+        state.stockfishCache.delete(key);
+        state.stockfishCache.set(key, cachedEngine);
+      }
       const inFlightEngine = state.stockfishInFlightKey === key ? state.stockfishInFlight : null;
       const engineTask = cachedEngine
         ? Promise.resolve(cachedEngine)
         : inFlightEngine || (async () => {
-            const response = await fetch(localUrl("api/v1/engine/analyze"), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...positionPayload,
-                depth: settings.depth,
-                multipv: settings.multipv,
-                hash_mb: settings.hash * 1024,
-                threads: settings.threads,
-              }),
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
-            rememberStockfishResult(key, data);
-            return data;
+            const requestController = new AbortController();
+            state.wholeGameRequestController = requestController;
+            try {
+              const response = await fetch(localUrl("api/v1/engine/analyze"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  ...positionPayload,
+                  depth: settings.depth,
+                  multipv: settings.multipv,
+                  hash_mb: settings.hash * 1024,
+                  threads: settings.threads,
+                }),
+                signal: requestController.signal,
+              });
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
+              rememberStockfishResult(key, data);
+              return data;
+            } finally {
+              if (state.wholeGameRequestController === requestController)
+                state.wholeGameRequestController = null;
+            }
           })();
       if (!cachedEngine && !inFlightEngine) {
         state.stockfishInFlight = engineTask;
@@ -1656,15 +1744,23 @@ async function analyzeWholeGame() {
       if (state.game === game && state.position?.fen === positionPayload.fen && key === stockfishRequestKey())
         showStockfishResult(data, key, false);
       completed += 1;
-      $("whole-game-status").textContent = `Analyzed ${completed} of ${total} positions · Maia cached ${maiaCompleted}${maiaError ? ` · Maia unavailable: ${maiaError}` : ""}`;
+      if (state.wholeGameController === controller && state.game === game)
+        $("whole-game-status").textContent = `Analyzed ${completed} of ${total} positions · Maia cached ${maiaCompleted}${maiaError ? ` · Maia unavailable: ${maiaError}` : ""}`;
     }
-    if (controller.signal.aborted) $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed · Maia cached ${maiaCompleted}`;
-    else $("whole-game-status").textContent = `Complete · ${completed} positions analyzed · Maia cached ${maiaCompleted}${maiaError ? ` · unavailable: ${maiaError}` : ""}`;
+    if (state.wholeGameController === controller && state.game === game) {
+      if (controller.signal.aborted) $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed · Maia cached ${maiaCompleted}`;
+      else $("whole-game-status").textContent = `Complete · ${completed} positions analyzed · Maia cached ${maiaCompleted}${maiaError ? ` · unavailable: ${maiaError}` : ""}`;
+    }
   } catch (error) {
-    if (error.name === "AbortError") $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed`;
-    else $("whole-game-status").textContent = `Stopped at ${completed + 1} of ${total}: ${error.message}`;
+    if (state.wholeGameController === controller && state.game === game) {
+      if (error.name === "AbortError") $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed`;
+      else $("whole-game-status").textContent = `Stopped at ${completed + 1} of ${total}: ${error.message}`;
+    }
   } finally {
-    if (state.wholeGameController === controller) state.wholeGameController = null;
+    if (state.wholeGameController === controller) {
+      state.wholeGameController = null;
+      state.wholeGameGame = null;
+    }
     updateWholeGameButton();
   }
 }
@@ -2010,6 +2106,7 @@ $("fen-form").addEventListener("submit", async (event) => {
     const position = await api("position", {
       fen: $("fen-input").value.trim(),
     });
+    cancelGameScopedAnalysis(null);
     state.position = position;
     state.game = null;
     state.maiaWarmupToken += 1;

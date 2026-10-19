@@ -513,13 +513,11 @@ def test_whole_game_reuses_the_current_identical_stockfish_search(page):
     page.locator("#sample").click()
     expect(page.locator("#whole-game-analyze")).to_be_enabled()
     page.locator("#whole-game-analyze").click()
-    expect(page.locator("#whole-game-status")).to_contain_text("Analyzing position 1")
+    expect(page.locator("#whole-game-status")).to_contain_text("Complete · 34 positions analyzed")
     page.evaluate("window.__releaseFirstStockfish()")
     page.locator("#whole-game-status").filter(
         has_text="Complete · 34 positions analyzed"
     ).wait_for()
-    # The stale browser fetch may still be resolving while the latest request
-    # runs; the backend serializes UCI work and cancels the older engine search.
     assert page.evaluate("window.__stockfishMaxActive") <= 2
 
 
@@ -750,12 +748,233 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     assert len(engine_requests) == requests_after_searching_both_positions
     assert len(maia_position_requests()) == maia_requests_after_warmup
     assert page.locator("#stockfish-results .stockfish-line").count() == 1
+    page.locator("#settings-tab-engine").click()
     page.locator("#stockfish-analyze").click()
     page.wait_for_timeout(100)
     assert len(engine_requests) == requests_after_searching_both_positions
     page.locator("#stockfish-lines-count").select_option("3")
     page.wait_for_timeout(200)
     assert len(engine_requests) == requests_after_searching_both_positions + 1
+
+
+def test_selecting_another_pgn_stops_old_whole_game_analysis(page):
+    page.add_init_script(
+        """window.__holdEngine = false;
+        window.__heldEngineCount = 0;
+        let releaseEngine;
+        const engineGate = new Promise(resolve => { releaseEngine = resolve; });
+        window.__releaseHeldEngine = () => releaseEngine();
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function (input, init = {}) {
+          if (window.__holdEngine && String(input).includes('/api/v1/engine/analyze')) {
+            window.__heldEngineCount += 1;
+            return engineGate.then(() => originalFetch(input, init));
+          }
+          return originalFetch(input, init);
+        };"""
+    )
+    page.route("**/api/v1/health", lambda route: route.fulfill(json={"loaded": True}))
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={"available": True, "name": "Stockfish 19 PGN fixture", "channel": "official19"}
+        ),
+    )
+
+    def analyze_maia(route):
+        data = json.loads(route.request.post_data)
+        board = chess.Board(data["fen"])
+        pairs = data.get("matchups") or [
+            {"player_elo": rating, "opponent_elo": rating}
+            for rating in data.get("ratings", [1800])
+        ]
+        route.fulfill(
+            json={
+                "predictions": [
+                    {
+                        **pair,
+                        "moves": [
+                            {
+                                "uci": move.uci(),
+                                "san": board.san(move),
+                                "probability": 0.05,
+                                "rank": rank,
+                            }
+                            for rank, move in enumerate(board.legal_moves, 1)
+                        ],
+                    }
+                    for pair in pairs
+                ]
+            }
+        )
+
+    engine_requests = []
+
+    def analyze_stockfish(route):
+        data = json.loads(route.request.post_data)
+        engine_requests.append(data)
+        board = chess.Board(data["fen"])
+        move = next(iter(board.legal_moves))
+        route.fulfill(
+            json={
+                "engine": "Stockfish 19 PGN fixture",
+                "channel": "official19",
+                "depth": data["depth"],
+                "lines": [
+                    {
+                        "rank": 1,
+                        "uci": move.uci(),
+                        "san": board.san(move),
+                        "pv": [board.san(move)],
+                        "score": "+0.10",
+                        "depth": data["depth"],
+                    }
+                ],
+            }
+        )
+
+    page.route("**/api/v1/analyze", analyze_maia)
+    page.route("**/api/v1/engine/analyze", analyze_stockfish)
+    page.goto(BASE_URL)
+    pgn = (
+        '[Event "First"]\n[White "A"]\n[Black "B"]\n\n1. e4 e5 *\n\n'
+        '[Event "Second"]\n[White "C"]\n[Black "D"]\n\n1. d4 d5 *\n'
+    )
+    page.locator("#pgn-file").set_input_files(
+        {"name": "two-games.pgn", "mimeType": "text/plain", "buffer": pgn.encode()}
+    )
+    page.locator("#game-select option").nth(1).wait_for(state="attached")
+    page.wait_for_timeout(200)
+    page.evaluate("window.__holdEngine = true")
+    page.locator("#whole-game-analyze").click()
+    page.wait_for_function("window.__heldEngineCount > 0")
+    page.locator("#game-select").select_option("1")
+    page.evaluate("window.__releaseHeldEngine()")
+    page.wait_for_function("!document.querySelector('#whole-game-analyze').disabled")
+    page.wait_for_timeout(200)
+    first_game_after_start = chess.Board()
+    first_game_after_start.push_san("e4")
+    assert all(request["fen"] != first_game_after_start.fen() for request in engine_requests)
+    assert page.locator("#game-result").text_content().endswith("2 plies")
+
+
+def test_maia_cache_is_reused_after_switching_between_pgn_games(page):
+    maia_requests = []
+    page.route("**/api/v1/health", lambda route: route.fulfill(json={"loaded": True}))
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(json={"available": False, "message": "Not installed"}),
+    )
+
+    def analyze_maia(route):
+        data = json.loads(route.request.post_data)
+        maia_requests.append(data)
+        board = chess.Board(data["fen"])
+        pairs = data.get("matchups") or [
+            {"player_elo": rating, "opponent_elo": rating}
+            for rating in data.get("ratings", [1800])
+        ]
+        route.fulfill(
+            json={
+                "predictions": [
+                    {
+                        **pair,
+                        "moves": [
+                            {
+                                "uci": move.uci(),
+                                "san": board.san(move),
+                                "probability": 0.05,
+                                "rank": rank,
+                            }
+                            for rank, move in enumerate(board.legal_moves, 1)
+                        ],
+                    }
+                    for pair in pairs
+                ]
+            }
+        )
+
+    page.route("**/api/v1/analyze", analyze_maia)
+    page.goto(BASE_URL)
+    pgn = (
+        '[Event "First"]\n[White "A"]\n[Black "B"]\n\n1. e4 e5 *\n\n'
+        '[Event "Second"]\n[White "C"]\n[Black "D"]\n\n1. d4 d5 *\n'
+    )
+    page.locator("#pgn-file").set_input_files(
+        {"name": "two-games.pgn", "mimeType": "text/plain", "buffer": pgn.encode()}
+    )
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready · 3 positions").wait_for()
+
+    def game_position_requests():
+        return [request for request in maia_requests if "initial_fen" in request]
+
+    first_game_count = len(game_position_requests())
+    page.locator("#game-select").select_option("1")
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready · 3 positions").wait_for()
+    second_game_count = len(game_position_requests())
+    assert second_game_count > first_game_count
+    page.locator("#game-select").select_option("0")
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready · 3 positions").wait_for()
+    assert len(game_position_requests()) == second_game_count
+
+
+def test_stockfish_cache_survives_switching_between_pgn_games(page):
+    engine_requests = []
+    page.route("**/api/v1/health", lambda route: route.fulfill(json={"loaded": True}))
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={"available": True, "name": "Stockfish 19 cache fixture", "channel": "official19"}
+        ),
+    )
+    page.route(
+        "**/api/v1/analyze",
+        lambda route: route.fulfill(json={"predictions": []}),
+    )
+
+    def analyze_stockfish(route):
+        data = json.loads(route.request.post_data)
+        engine_requests.append(data)
+        board = chess.Board(data["fen"])
+        move = next(iter(board.legal_moves))
+        route.fulfill(
+            json={
+                "engine": "Stockfish 19 cache fixture",
+                "channel": "official19",
+                "depth": data["depth"],
+                "lines": [
+                    {
+                        "rank": 1,
+                        "uci": move.uci(),
+                        "san": board.san(move),
+                        "pv": [board.san(move)],
+                        "score": "+0.10",
+                        "depth": data["depth"],
+                    }
+                ],
+            }
+        )
+
+    page.route("**/api/v1/engine/analyze", analyze_stockfish)
+    page.goto(BASE_URL)
+    pgn = (
+        '[Event "First"]\n[White "A"]\n[Black "B"]\n\n1. e4 e5 *\n\n'
+        '[Event "Second"]\n[White "C"]\n[Black "D"]\n\n1. d4 d5 *\n'
+    )
+    page.locator("#pgn-file").set_input_files(
+        {"name": "two-games.pgn", "mimeType": "text/plain", "buffer": pgn.encode()}
+    )
+    page.locator("#game-select option").nth(1).wait_for(state="attached")
+    page.wait_for_timeout(300)
+    page.locator("#stockfish-results .stockfish-line").first.wait_for()
+    assert any("initial_fen" in request for request in engine_requests)
+    first_count = len(engine_requests)
+    page.locator("#game-select").select_option("1")
+    page.wait_for_timeout(200)
+    assert len(engine_requests) == first_count
+    page.locator("#game-select").select_option("0")
+    page.wait_for_timeout(200)
+    assert len(engine_requests) == first_count
 
 
 def test_browser_upload_accepts_150_mib_engine_file(page):
