@@ -19,6 +19,7 @@ const state = {
   analysisMode: "dual",
   maiaMode: "triple",
   ratingPredictions: [],
+  maiaCache: new Map(),
   stockfishPositionKey: null,
   stockfishCache: new Map(),
   predictions: [],
@@ -72,6 +73,16 @@ async function api(path, data, signal) {
         "Run start.bat in the installed ELO Vision app for PGN imports and real Maia analysis.",
     );
   }
+  const cacheKey = path === "analyze" ? JSON.stringify(data) : null;
+  if (cacheKey && state.maiaCache.has(cacheKey)) {
+    const cached = state.maiaCache.get(cacheKey);
+    state.maiaCache.delete(cacheKey);
+    state.maiaCache.set(cacheKey, cached);
+    return {
+      ...structuredClone(cached),
+      predictions: cached.predictions.map((prediction) => ({ ...structuredClone(prediction), cached: true })),
+    };
+  }
   const response = await fetch(
     localUrl(`api/v1/${path}`),
     data === undefined
@@ -92,7 +103,13 @@ async function api(path, data, signal) {
     error.code = data.error?.code;
     throw error;
   }
-  return response.json();
+  const result = await response.json();
+  if (cacheKey && Array.isArray(result.predictions)) {
+    state.maiaCache.set(cacheKey, structuredClone(result));
+    while (state.maiaCache.size > 256)
+      state.maiaCache.delete(state.maiaCache.keys().next().value);
+  }
+  return result;
 }
 function payload() {
   const base = { fen: state.position.fen };

@@ -124,8 +124,8 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
     deltas = page.locator(".compare-table tbody tr td:last-child").all_text_contents()
     assert [float(v) for v in deltas] == sorted([float(v) for v in deltas], reverse=True)
     page.locator("#tab-spectrum").click()
-    page.locator("#chart svg").wait_for()
-    assert requested[-1]["ratings"] == list(range(400, 3001, 200))
+    page.locator(".spectrum-table thead th").nth(14).wait_for()
+    assert page.locator("#results-title").text_content() == "The full rating spectrum"
     assert page.locator(".spectrum-table thead th").count() == 15
     assert page.locator(".chart-dot").count() == 14
     options = page.locator("#chart-move option").all_text_contents()
@@ -479,9 +479,11 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     from playwright.sync_api import expect
 
     engine_requests = []
+    maia_requests = []
 
     def analyze_maia(route):
         data = json.loads(route.request.post_data)
+        maia_requests.append(data)
         board = chess.Board(data["fen"])
         matchups = data.get("matchups") or [
             {"player_elo": rating, "opponent_elo": rating} for rating in data.get("ratings", [1800])
@@ -545,14 +547,20 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     page.goto(BASE_URL)
     page.locator("#sample").click()
     expect(page.locator("#next")).to_be_enabled()
+    page.locator("#dual-human-moves .comparison-move").first.wait_for()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
     page.locator("#next").click()
+    page.locator("#dual-human-moves .comparison-move").first.wait_for()
+    expect(page.locator("#probability-total")).to_contain_text("Model pass")
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.22").wait_for()
     requests_after_searching_both_positions = len(engine_requests)
+    maia_requests_after_searching_both_positions = len(maia_requests)
     page.locator("#prev").click()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
+    expect(page.locator("#probability-total")).to_contain_text("Cached")
     page.wait_for_timeout(200)
     assert len(engine_requests) == requests_after_searching_both_positions
+    assert len(maia_requests) == maia_requests_after_searching_both_positions
     assert page.locator("#stockfish-results .stockfish-line").count() == 1
 
 
