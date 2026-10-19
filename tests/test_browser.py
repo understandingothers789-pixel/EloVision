@@ -107,7 +107,9 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
     assert len(requested) and requested[0]["matchups"] == [
         {"player_elo": 1800, "opponent_elo": 1800}
     ]
-    page.locator("#view-maia").click()
+    assert page.locator("#workspace-analysis").get_attribute("aria-selected") == "true"
+    page.locator("#workspace-explorer").click()
+    assert "explorer-layout" in page.locator(".workspace").get_attribute("class")
     page.locator("#tab-explore").click()
     page.locator(".move-prediction").nth(4).wait_for()
     page.locator("#maia-move-limit").select_option("all")
@@ -139,6 +141,10 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
         page.locator("#export-json").click()
     download_info.value.save_as(tmp_path / "export.json")
     assert json.loads((tmp_path / "export.json").read_text())["schema_version"] == "test-fixture"
+    page.locator("#workspace-analysis").click()
+    assert "analysis-layout" in page.locator(".workspace").get_attribute("class")
+    assert page.locator("#dual-view").is_visible()
+    assert page.locator("#workspace-analysis").get_attribute("aria-selected") == "true"
 
 
 def test_browser_does_not_display_stale_analysis(page):

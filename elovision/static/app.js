@@ -12,7 +12,9 @@ const state = {
   ply: 0,
   position: null,
   flipped: false,
+  workspaceTab: "analysis",
   mode: "dual",
+  analysisMode: "dual",
   maiaMode: "triple",
   ratingPredictions: [],
   stockfishPositionKey: null,
@@ -289,6 +291,7 @@ async function importPgn(text) {
   );
 }
 function scheduleAnalysis(delay = 0) {
+  if (!state.position) return;
   const revision = ++state.revision;
   clearTimeout(state.timer);
   state.controller?.abort();
@@ -511,6 +514,7 @@ function renderGauges() {
     fill.style.bottom = "50%";
     marker.textContent = "—";
     marker.style.top = "50%";
+    renderBoardInsight();
     return;
   }
   const mate = best.mate;
@@ -527,6 +531,27 @@ function renderGauges() {
   fill.style.height = `${percent}%`;
   marker.textContent = mate ? (mate > 0 ? `M${mate}` : `−M${Math.abs(mate)}`) : best.score;
   marker.style.top = `${100 - (bounded + 400) / 8}%`;
+  renderBoardInsight();
+}
+function renderBoardInsight() {
+  const prediction = state.predictions?.[0];
+  const playedUci = state.position?.actual_move;
+  const played = prediction?.moves?.find((move) => move.uci === playedUci);
+  const topMove = prediction?.moves?.[0];
+  const move = played || topMove;
+  const engine = state.stockfish?.lines?.[0];
+  $("insight-move-label").textContent = played ? "Move in game" : "Top human move";
+  $("insight-move").textContent = move?.san || "—";
+  $("insight-probability").textContent = move ? pct(move.probability) : "—";
+  $("insight-rank").textContent = move ? `${move.rank} / ${prediction.moves.length}` : "—";
+  $("insight-rating").textContent = prediction ? `Maia ${prediction.player_elo}` : "Waiting for Maia";
+  $("insight-engine").textContent = engine?.score || "Waiting";
+  $("insight-fill").style.width = move ? `${move.probability * 100}%` : "0%";
+  $("insight-note").textContent = played
+    ? `At ${prediction.player_elo}, Maia ranks ${played.san} ${played.rank} of ${prediction.moves.length} legal moves. Stockfish's independent evaluation is shown when an engine is available.`
+    : state.position?.actual_move
+      ? "Waiting for Maia to score the move played in this game."
+      : "No game move is selected here. Import a PGN to compare the played move with Maia and Stockfish.";
 }
 function renderMoveArrows(predictions = state.predictions) {
   const svg = $("move-arrows");
@@ -838,6 +863,7 @@ function renderRatingComparisonChart() {
 function setMode(mode) {
   state.mode = mode;
   if (!["dual", "stockfish"].includes(mode)) state.maiaMode = mode;
+  else state.analysisMode = mode;
   const view = mode === "dual" ? "dual" : mode === "stockfish" ? "stockfish" : "maia";
   document.querySelectorAll(".view-tab").forEach((tab) => {
     const active = tab.dataset.view === view;
@@ -849,9 +875,9 @@ function setMode(mode) {
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", String(active));
   });
-  $("maia-tabs").hidden = view !== "maia";
-  $("dual-view").hidden = view === "maia";
-  $("maia-view").hidden = view !== "maia";
+  $("maia-tabs").hidden = state.workspaceTab !== "explorer" || view !== "maia";
+  $("dual-view").hidden = state.workspaceTab !== "analysis" || view === "maia";
+  $("maia-view").hidden = state.workspaceTab !== "explorer" || view !== "maia";
   $("dual-results").classList.toggle("pure-stockfish", view === "stockfish");
   document.querySelector(".dual-toolbar").classList.toggle("pure-stockfish", view === "stockfish");
   $("rating-control").hidden = mode === "stockfish" || mode === "triple" || mode === "compare" || mode === "spectrum";
@@ -874,10 +900,25 @@ function setMode(mode) {
   }[mode];
   scheduleAnalysis();
 }
+function setWorkspaceTab(tab) {
+  if (!["analysis", "explorer"].includes(tab)) return;
+  state.workspaceTab = tab;
+  const workspace = document.querySelector(".workspace");
+  workspace.classList.toggle("analysis-layout", tab === "analysis");
+  workspace.classList.toggle("explorer-layout", tab === "explorer");
+  document.body.classList.toggle("analysis-theme", tab === "analysis");
+  document.querySelectorAll(".workspace-tab").forEach((button) => {
+    const active = button.dataset.workspace === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelector(".analysis-panel .panel-heading h2").textContent =
+    tab === "analysis" ? "Analysis" : "Human move explorer";
+  setMode(tab === "analysis" ? state.analysisMode : state.maiaMode);
+}
 function setView(view) {
   if (view === "dual") setMode("dual");
   else if (view === "stockfish") setMode("stockfish");
-  else setMode(state.maiaMode || "triple");
 }
 async function exportResults(format) {
   const button = $("export-" + format);
@@ -947,6 +988,9 @@ document.querySelectorAll(".tab").forEach((tab) =>
 );
 document.querySelectorAll(".view-tab").forEach((tab) =>
   tab.addEventListener("click", () => setView(tab.dataset.view)),
+);
+document.querySelectorAll(".workspace-tab").forEach((tab) =>
+  tab.addEventListener("click", () => setWorkspaceTab(tab.dataset.workspace)),
 );
 $("move-limit").addEventListener("change", () => {
   renderPredictions();

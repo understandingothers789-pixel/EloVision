@@ -1914,3 +1914,387 @@ textarea {
   .gauge-track { width: 9px; min-height: 120px; }
   .gauge-title { font-size: 7px; }
 }
+
+/* The original Maia explorer and the paired analysis workspace are separate pages. */
+body.analysis-theme {
+  --bg: #171419;
+  --panel: #211d22;
+  --raised: #2c272d;
+  --line: #3d363e;
+  --text: #f2eae2;
+  --muted: #a69aa0;
+  --accent: #e7c85e;
+  --deep: #40352e;
+  --board-light: #efdcb9;
+  --board-dark: #c2ad8d;
+  background: #171419;
+}
+body.analysis-theme .topbar {
+  background: #1b171c;
+  border-color: #352d36;
+}
+body.analysis-theme .brand-mark {
+  background: #d99ab8;
+  color: #271a25;
+}
+body.analysis-theme .primary {
+  color: #241c1a;
+  background: #e7c85e;
+  border-color: #e7c85e;
+}
+body.analysis-theme .local-badge i,
+body.analysis-theme .small-dot {
+  background: #77c879;
+}
+.workspace-tabs {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  margin: 0 0 14px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.workspace-tab {
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 16px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+}
+.workspace-tab:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+.workspace-tab.active {
+  color: var(--text);
+  background: #40352e;
+  box-shadow: inset 0 0 0 1px #6b5941;
+}
+body:not(.analysis-theme) .workspace-tab.active {
+  color: #e1f0d9;
+  background: #30432f;
+  box-shadow: inset 0 0 0 1px #4f6f4d;
+}
+.workspace.analysis-layout {
+  display: grid;
+  grid-template-columns: minmax(235px, 0.76fr) minmax(420px, 1.46fr) minmax(385px, 1.02fr);
+  align-items: start;
+  gap: 16px;
+}
+.workspace.analysis-layout > .game-panel { grid-column: 1; grid-row: 1; }
+.workspace.analysis-layout > .board-panel { grid-column: 2; grid-row: 1; }
+.workspace.analysis-layout > .analysis-panel { grid-column: 3; grid-row: 1; }
+.workspace.explorer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(405px, 0.82fr);
+  align-items: start;
+  gap: 20px;
+}
+.workspace.explorer-layout > .board-panel { grid-column: 1; grid-row: 1; }
+.workspace.explorer-layout > .game-panel { grid-column: 1; grid-row: 2; }
+.workspace.explorer-layout > .analysis-panel {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.workspace.explorer-layout .board-arrow-legend,
+.workspace.explorer-layout .eval-gauge,
+.workspace.explorer-layout .analysis-views {
+  display: none;
+}
+.workspace.explorer-layout .board-analysis-stage {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace.explorer-layout .game-panel {
+  max-height: 72vh;
+}
+.workspace.explorer-layout .notation {
+  min-height: 220px;
+  height: 39vh;
+}
+.workspace.explorer-layout .analysis-panel .panel-heading h2 {
+  margin-right: auto;
+}
+body.analysis-theme .panel,
+body.analysis-theme .board-wrap,
+body.analysis-theme .board-insight {
+  border-color: #403740;
+}
+body.analysis-theme .panel {
+  background: #211d22;
+  box-shadow: 0 14px 35px #0003;
+}
+body.analysis-theme .board-wrap {
+  border-color: #765f4a;
+  box-shadow: 0 14px 36px #0005;
+}
+body.analysis-theme .square.last { background: #c6c65f; }
+body.analysis-theme .square.dark.last { background: #a8a647; }
+body.analysis-theme .board-toolbar { background: #211d22; }
+body.analysis-theme .icon-button:hover:enabled { background: #383139; }
+.workspace.analysis-layout .game-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: min(78vh, 850px);
+  min-height: 630px;
+  overflow: hidden;
+}
+.workspace.analysis-layout .game-panel .notation {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 160px;
+}
+.workspace.analysis-layout .game-meta:not(.imported) {
+  min-height: 130px;
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+.workspace.analysis-layout .game-meta:not(.imported) h3 {
+  font-size: 17px;
+}
+.workspace.analysis-layout .game-panel .panel-heading,
+.workspace.analysis-layout .analysis-panel .panel-heading {
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--line);
+}
+.workspace.analysis-layout .sample-select-wrap {
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--line);
+}
+.workspace.analysis-layout .game-meta.imported {
+  padding: 12px 14px;
+  min-height: 104px;
+}
+.workspace.analysis-layout .game-meta.imported h3 {
+  font-size: 13px;
+}
+.workspace.analysis-layout .game-meta.imported p {
+  margin: 5px 0;
+}
+.workspace.analysis-layout .notation-head {
+  grid-template-columns: 42px minmax(0, 1fr) minmax(0, 1fr);
+}
+.workspace.analysis-layout .notation-row {
+  grid-template-columns: 42px minmax(0, 1fr) minmax(0, 1fr);
+}
+.workspace.analysis-layout .board-panel {
+  min-width: 0;
+  padding-top: 4px;
+}
+.workspace.analysis-layout .board-analysis-stage {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: stretch;
+  gap: 8px;
+}
+.workspace.analysis-layout .board-analysis-stage .board-wrap {
+  min-width: 0;
+  align-self: center;
+}
+.workspace.analysis-layout .eval-gauge {
+  min-height: 100%;
+  font-size: 8px;
+}
+.workspace.analysis-layout .gauge-track {
+  flex: 1 1 auto;
+  min-height: 250px;
+  width: 12px;
+}
+.workspace.analysis-layout .player-strip {
+  margin: 7px 0;
+}
+.workspace.analysis-layout .board-arrow-legend {
+  justify-content: center;
+  padding: 4px 0 8px;
+  color: var(--muted);
+}
+.workspace.analysis-layout .board-toolbar {
+  margin-top: 8px;
+}
+.workspace.analysis-layout .board-insight {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 83%, transparent);
+}
+.insight-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.insight-heading small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+.insight-grid > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.insight-grid span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insight-grid strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insight-track {
+  height: 5px;
+  margin: 10px 0 7px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--raised);
+}
+.insight-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #e05a49, #eac85d, #54ad68);
+  transition: width 180ms ease;
+}
+.board-insight p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.workspace.analysis-layout .analysis-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+.workspace.analysis-layout .analysis-views {
+  padding: 0 14px;
+  gap: 18px;
+  background: #1c181d;
+}
+.workspace.analysis-layout .view-tab {
+  padding: 10px 1px;
+  font-size: 10px;
+}
+.workspace.analysis-layout .view-tab.active {
+  color: #ef776d;
+  border-color: #ef776d;
+}
+.workspace.analysis-layout .rating-control {
+  padding: 15px 16px 12px;
+}
+.workspace.analysis-layout .rating-value span {
+  color: #f0d36b;
+}
+.workspace.analysis-layout .rating-control input[type="range"] {
+  margin: 14px 0 9px;
+  accent-color: #73bd78;
+}
+.workspace.analysis-layout .dual-toolbar {
+  gap: 7px;
+  padding: 10px 12px;
+  background: #1d191e;
+}
+.workspace.analysis-layout .dual-toolbar > label {
+  font-size: 8px;
+}
+.workspace.analysis-layout .dual-toolbar select {
+  max-width: 130px;
+  font-size: 9px;
+}
+.workspace.analysis-layout .dual-toolbar .button {
+  min-height: 29px;
+}
+.workspace.analysis-layout .dual-column {
+  padding: 12px 13px 9px;
+}
+.workspace.analysis-layout .dual-column h3 {
+  font-size: 10px;
+}
+.workspace.analysis-layout .dual-column .analysis-caption {
+  margin: 4px 0 8px;
+  line-height: 1.4;
+}
+.workspace.analysis-layout .dual-moves .prediction-san { color: #e77970; }
+.workspace.analysis-layout .dual-moves .probability-bar { background: #bd4b47; }
+.workspace.analysis-layout .stockfish-line.best strong:nth-child(2) { color: #7dcc83; }
+.workspace.analysis-layout .rating-chart-panel {
+  margin: 10px 12px 12px;
+  padding: 11px;
+  background: #1c181d;
+}
+.workspace.analysis-layout .rating-chart-panel h3 { font-size: 11px; }
+.workspace.analysis-layout .rating-chart-axis { fill: #b7aeb4; }
+.workspace.analysis-layout .rating-chart-grid { stroke: #403940; }
+.workspace.analysis-layout .stockfish-panel {
+  margin: 0 12px 12px;
+  background: #1c181d;
+}
+.workspace.explorer-layout .board-insight { display: none; }
+.workspace.explorer-layout .rating-control { display: block; }
+.workspace.explorer-layout .analysis-panel .analysis-views { display: none; }
+@media (max-width: 1350px) {
+  .workspace.analysis-layout {
+    grid-template-columns: minmax(220px, 0.72fr) minmax(380px, 1.28fr);
+  }
+  .workspace.analysis-layout > .game-panel { grid-column: 1; grid-row: 1; }
+  .workspace.analysis-layout > .board-panel { grid-column: 2; grid-row: 1; }
+  .workspace.analysis-layout > .analysis-panel { grid-column: 1 / -1; grid-row: 2; }
+  .workspace.explorer-layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(390px, 0.95fr);
+  }
+}
+@media (max-width: 900px) {
+  .workspace.analysis-layout,
+  .workspace.explorer-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .workspace.analysis-layout > section,
+  .workspace.explorer-layout > section {
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+  }
+  .workspace.analysis-layout .game-panel { order: 0; height: auto; }
+  .workspace.analysis-layout .notation { height: 330px; }
+  .workspace.analysis-layout .board-panel { order: 1; }
+  .workspace.analysis-layout .analysis-panel { order: 2; }
+  .workspace.explorer-layout .board-panel { order: 0; }
+  .workspace.explorer-layout .game-panel { order: 1; }
+  .workspace.explorer-layout .analysis-panel { order: 2; }
+  .workspace.explorer-layout .notation { height: 300px; }
+}
+@media (max-width: 600px) {
+  .workspace-tabs { margin-bottom: 10px; }
+  .workspace-tab { padding: 8px 11px; }
+  .workspace.analysis-layout .board-analysis-stage { grid-template-columns: 32px minmax(0, 1fr) 32px; gap: 5px; }
+  .workspace.analysis-layout .gauge-track { min-height: 200px; width: 9px; }
+  .workspace.analysis-layout .gauge-title { font-size: 7px; }
+  .workspace.analysis-layout .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace.analysis-layout .dual-results { grid-template-columns: minmax(0, 1fr); }
+  .workspace.analysis-layout .dual-column + .dual-column { border-left: 0; border-top: 1px solid var(--line); }
+  .workspace.analysis-layout .dual-toolbar { align-items: end; }
+}
