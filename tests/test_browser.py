@@ -150,6 +150,28 @@ def test_browser_comparison_spectrum_chart_and_exports_with_test_fixture(page, t
     assert page.locator("#workspace-analysis").get_attribute("aria-selected") == "true"
 
 
+def test_maia_explorer_matches_analysis_layout_and_keeps_board_in_view(page):
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(BASE_URL)
+    analysis_background = page.locator("body").evaluate(
+        "element => getComputedStyle(element).getPropertyValue('--bg').trim()"
+    )
+    page.locator("#workspace-explorer").click()
+    page.locator("#tab-explore").click()
+    assert page.locator(".workspace").evaluate(
+        "element => element.classList.contains('analysis-layout') && "
+        "element.classList.contains('explorer-layout')"
+    )
+    assert page.locator("body").evaluate(
+        "element => getComputedStyle(element).getPropertyValue('--bg').trim()"
+    ) == analysis_background
+    board = page.locator("#board").bounding_box()
+    assert board is not None
+    assert board["y"] + board["height"] <= 900
+    assert page.locator("#maia-view").is_visible()
+    assert page.locator("#dual-view").is_hidden()
+
+
 def test_browser_does_not_display_stale_analysis(page):
     calls = []
 

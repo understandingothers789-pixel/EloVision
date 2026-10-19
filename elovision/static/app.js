@@ -1158,9 +1158,9 @@ function setWorkspaceTab(tab) {
   if (!["analysis", "explorer"].includes(tab)) return;
   state.workspaceTab = tab;
   const workspace = document.querySelector(".workspace");
-  workspace.classList.toggle("analysis-layout", tab === "analysis");
+  workspace.classList.toggle("analysis-layout", tab === "analysis" || tab === "explorer");
   workspace.classList.toggle("explorer-layout", tab === "explorer");
-  document.body.classList.toggle("analysis-theme", tab === "analysis");
+  document.body.classList.add("analysis-theme");
   document.querySelectorAll(".workspace-tab").forEach((button) => {
     const active = button.dataset.workspace === tab;
     button.classList.toggle("active", active);
