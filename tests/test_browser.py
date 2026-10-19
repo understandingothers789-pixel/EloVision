@@ -365,6 +365,17 @@ def test_browser_shows_stockfish_install_error_in_engine_setup(page):
     assert page.locator("#stockfish-panel").evaluate("el => el.open")
 
 
+def test_browser_identifies_stale_stockfish_backend(page):
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(status=404, json={"detail": "Not Found"}),
+    )
+    page.goto(BASE_URL)
+    page.locator("#stockfish-error").filter(has_text="older ELO Vision backend").wait_for()
+    assert "free port" in page.locator("#stockfish-error").text_content()
+    assert page.locator("#stockfish-status").text_content() == "Older ELO Vision server detected"
+
+
 def test_browser_upload_accepts_150_mib_engine_file(page):
     requested = []
     page.route(

@@ -57,7 +57,7 @@ python3 -m venv .venv
 
 On macOS, install `torch==2.8.0` from the default PyPI index instead of the CPU-specific index. macOS itself has not been tested. On Windows the Python executable is `.venv\Scripts\python.exe`.
 
-The server binds to `127.0.0.1:8765` and rejects foreign hosts/origins. Use `serve --port 8766` if that port is occupied. This is a single-user local application; it is not configured for public hosting. Import limits: 2 MB per PGN, 100 games per file, 3000 plies per game. API docs are served at `/docs` by the running app.
+The server binds to loopback (`127.0.0.1`) and rejects foreign hosts/origins. It starts at port `8765`, then selects another free local port if an older instance already owns that port; `start.bat` opens the exact address it selected. This is a single-user local application; it is not configured for public hosting. Import limits: 2 MB per PGN, 100 games per file, 3000 plies per game. API docs are served at `/docs` by the running app.
 
 ## Model acquisition and inference
 
@@ -108,7 +108,7 @@ Browser tests use Playwright and a running local server. Install Chromium with `
 - **PGN error:** check the indicated game and illegal move. Only standard chess is supported. A malformed PGN is rejected instead of displaying a silently truncated game.
 - **Slow first analysis:** initialization and checksum verification happen once, on the first prediction. Subsequent calls reuse the model. All-rating inference runs in small CPU batches; the browser remains interactive.
 - **No moves:** checkmate/stalemate return an empty move list and no fabricated policy. Other legally playable draw positions can still expose legal-move predictions.
-- **Port occupied:** run `python -m elovision serve --port 8766 --open`. Do not start a second server on the same port.
+- **Port occupied:** the launcher automatically picks a free port and opens that address. Close older ELO Vision windows when convenient; each running instance has its own app state.
 
 ## License and credits
 

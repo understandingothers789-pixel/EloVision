@@ -82,10 +82,13 @@ async function api(path, data, signal) {
         },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.error?.message || `Request failed (${response.status}).`,
+    const data = await response.json().catch(() => ({}));
+    const error = new Error(
+      data.error?.message || `Request failed (${response.status}).`,
     );
+    error.status = response.status;
+    error.code = data.error?.code;
+    throw error;
   }
   return response.json();
 }
@@ -1303,9 +1306,16 @@ async function refreshStockfishStatus() {
       analyzeStockfish();
   } catch (error) {
     state.stockfishAvailable = false;
-    $("stockfish-status").textContent = "Stockfish is unavailable";
+    const outdated = error.status === 404;
+    $("stockfish-status").textContent = outdated
+      ? "Older ELO Vision server detected"
+      : "Stockfish is unavailable";
     $("stockfish-status").title = error.message;
-    stockfishError(error.message);
+    stockfishError(
+      outdated
+        ? "This browser is connected to an older ELO Vision backend that has no Stockfish status route. Start the updated app again; it will choose a free port and open the correct address."
+        : error.message,
+    );
   }
 }
 function renderStockfish(result) {
@@ -1410,7 +1420,16 @@ async function installStockfish(file) {
       body: file,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`${data.error?.code ? `${data.error.code}: ` : ""}${data.error?.message || `Engine install failed (${response.status}).`}`);
+    if (!response.ok) {
+      const code = data.error?.code;
+      const detail = data.error?.message || `Engine install failed (${response.status}).`;
+      const stale = code === "request_too_large" && detail.includes("2.5 MB");
+      throw new Error(
+        stale
+          ? "This browser is connected to an older ELO Vision backend with the 2.5 MB request limit. Start the updated app; it will open on the correct free port."
+          : `${code ? `${code}: ` : ""}${detail}`,
+      );
+    }
     state.stockfishAvailable = true;
     state.stockfish = null;
     state.stockfishPositionKey = null;
@@ -1424,7 +1443,10 @@ async function installStockfish(file) {
     if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish(true);
   } catch (error) {
     state.stockfishAvailable = false;
-    $("stockfish-status").textContent = "Engine setup needs attention";
+    const outdated = error.message.includes("older ELO Vision backend");
+    $("stockfish-status").textContent = outdated
+      ? "Old server still answering on this address"
+      : "Engine setup needs attention";
     engineMessage(error.message);
     stockfishError(error.message);
   } finally {
