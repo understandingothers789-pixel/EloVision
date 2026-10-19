@@ -8,6 +8,7 @@ const preview = globalThis.ELOVISION_PREVIEW || null;
 const localUrl = (path) => new URL(path, document.baseURI).href;
 const state = {
   games: [],
+  pgnImportToken: 0,
   ratingValues: [1400, 1800, 2200],
   opponentValues: [1400, 1800, 2200],
   game: null,
@@ -141,7 +142,13 @@ async function api(path, data, signal) {
     const cached = readMaiaCache(data);
     if (cached) return cached;
     const pending = state.maiaInFlight.get(cacheKey);
-    if (pending) return waitForMaia(pending, signal);
+    if (pending && !pending.cancelled && !pending.controller.signal.aborted)
+      return waitForMaia(pending, signal);
+    // A request whose last consumer just left may still be unwinding its
+    // aborted fetch. Do not attach a newly selected position to that doomed
+    // promise; queue a fresh request behind it instead.
+    if (pending && state.maiaInFlight.get(cacheKey) === pending)
+      state.maiaInFlight.delete(cacheKey);
   }
   const request = async (entry = null) => {
     if (entry?.cancelled && entry.consumers === 0)
@@ -483,7 +490,15 @@ function cancelGameScopedAnalysis(nextGame) {
   }
 }
 async function importPgn(text) {
-  const data = await api("pgn", { pgn: text });
+  const token = ++state.pgnImportToken;
+  let data;
+  try {
+    data = await api("pgn", { pgn: text });
+  } catch (error) {
+    if (token !== state.pgnImportToken) return false;
+    throw error;
+  }
+  if (token !== state.pgnImportToken) return false;
   state.games = data.games;
   state.game = data.games[0];
   $("game-select").replaceChildren(
@@ -503,6 +518,7 @@ async function importPgn(text) {
   toast(
     `Imported ${data.games.length} game${data.games.length === 1 ? "" : "s"}`,
   );
+  return true;
 }
 function scheduleAnalysis(delay = 0) {
   if (!state.position) return;
@@ -2041,6 +2057,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 $("game-select").addEventListener("change", () => {
+  state.pgnImportToken += 1;
   state.game = state.games[Number($("game-select").value)];
   renderGame();
 });
