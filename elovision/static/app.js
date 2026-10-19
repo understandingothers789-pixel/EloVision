@@ -557,7 +557,9 @@ function renderComparisonSummary() {
   const container = $("comparison-summary");
   const human = state.predictions[0]?.moves?.[0];
   const engine = state.stockfish?.lines?.[0];
+  const differs = Boolean(human && engine && human.uci !== engine.uci);
   container.replaceChildren();
+  container.classList.toggle("moves-disagree", differs);
   const label = node("span", "comparison-label");
   const text = node("p");
   if (state.position?.legal_count === 0) {
@@ -568,8 +570,9 @@ function renderComparisonSummary() {
     text.textContent = engine ? `Stockfish prefers ${engine.san} at ${engine.score} from White’s perspective. Hover a move to inspect it on the board.` : "Choose your local engine in Engine setup to search this position.";
   } else if (human && engine) {
     const same = human.uci === engine.uci;
-    label.textContent = same ? "SHARED FAVORITE" : "DIFFERENT FAVORITES";
+    label.textContent = same ? "SHARED FAVORITE" : "≠ TOP MOVES DIFFER";
     label.classList.toggle("agrees", same);
+    label.classList.toggle("disagrees", !same);
     text.append("Maia favors ", node("strong", "human-text", `${human.san} (${(human.probability * 100).toFixed(1)}%)`), "; Stockfish prefers ", node("strong", "engine-text", `${engine.san} (${engine.score})`), ". ");
     const engineInPolicy = state.predictions[0].moves.find((move) => move.uci === engine.uci);
     if (!same && engineInPolicy) text.append(`The engine favorite is Maia’s #${engineInPolicy.rank} choice at ${(engineInPolicy.probability * 100).toFixed(1)}%.`);

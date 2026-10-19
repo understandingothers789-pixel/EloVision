@@ -2101,6 +2101,8 @@ body.analysis-theme .square.dark.last { background: #aeb34d; }
 .comparison-summary { border-top: 1px solid var(--line); padding: 12px; min-height: 85px; }
 .comparison-label { color: #ccaa83; font-size: 8px; font-weight: 600; letter-spacing: 1px; }
 .comparison-label.agrees { color: #70be81; }
+.comparison-summary.moves-disagree { border: 1px solid #724943; border-left: 3px solid #ed755e; border-radius: 3px; background: linear-gradient(100deg, #492d2d99, #25212599 72%); }
+.comparison-summary.moves-disagree .comparison-label.disagrees { display: inline-flex; padding: 3px 7px; border: 1px solid #9a5148; border-radius: 3px; background: #4a2a2b; color: #ff9b87; letter-spacing: .7px; }
 .comparison-summary p { margin: 5px 0 0; color: #b8aeb6; font-size: 12px; line-height: 1.5; }
 .comparison-summary strong { font-weight: 500; }
 .human-text { color: #ef8876; }

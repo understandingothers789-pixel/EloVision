@@ -309,6 +309,10 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator(".rating-chart-end-label").count() == 5
     assert page.locator('.rating-chart-line[data-uci="e2e4"]').count() == 1
     assert "Stockfish prefers" in page.locator("#comparison-summary").text_content()
+    assert "moves-disagree" in page.locator("#comparison-summary").get_attribute("class")
+    assert "TOP MOVES DIFFER" in page.locator(
+        "#comparison-summary .comparison-label"
+    ).text_content()
     page.locator(".rating-chart-dot").first.focus()
     assert "400 vs. 400 Elo" in page.locator(".rating-chart-tooltip").text_content()
     assert "5.00%" in page.locator(".rating-chart-tooltip").text_content()
