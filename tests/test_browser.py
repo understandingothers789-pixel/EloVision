@@ -232,6 +232,42 @@ def test_browser_does_not_display_stale_analysis(page):
     assert calls[-1] == 2400
 
 
+def test_switching_games_aborts_unneeded_maia_requests(page):
+    page.add_init_script(
+        """(() => {
+          window.__maiaRequests = 0;
+          window.__maiaAborts = 0;
+          const fetch = window.fetch.bind(window);
+          window.fetch = (input, init = {}) => {
+            if (String(input).includes('/api/v1/analyze')) {
+              window.__maiaRequests += 1;
+              return new Promise((resolve, reject) => {
+                const abort = () => {
+                  window.__maiaAborts += 1;
+                  reject(new DOMException('Aborted for test', 'AbortError'));
+                };
+                if (init.signal?.aborted) abort();
+                else init.signal?.addEventListener('abort', abort, { once: true });
+              });
+            }
+            return fetch(input, init);
+          };
+        })();"""
+    )
+    page.goto(BASE_URL)
+    for _ in range(40):
+        if page.evaluate("window.__maiaRequests > 0"):
+            break
+        page.wait_for_timeout(50)
+    assert page.evaluate("window.__maiaRequests > 0")
+    page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
+    for _ in range(40):
+        if page.evaluate("window.__maiaAborts > 0"):
+            break
+        page.wait_for_timeout(50)
+    assert page.evaluate("window.__maiaAborts > 0")
+
+
 def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     from playwright.sync_api import expect
 

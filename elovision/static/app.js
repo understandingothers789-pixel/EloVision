@@ -86,7 +86,13 @@ function waitForMaia(entry, signal) {
       settled = true;
       signal?.removeEventListener("abort", abort);
       entry.consumers -= 1;
-      if (!entry.started && entry.consumers === 0) entry.cancelled = true;
+      if (entry.consumers === 0) {
+        // A stale game should not hold the single-worker Maia queue while it
+        // finishes an inference nobody is waiting for. Shared requests stay
+        // alive until their last view/warmup consumer leaves.
+        entry.cancelled = true;
+        entry.controller.abort();
+      }
     };
     const abort = () => {
       release();
@@ -153,6 +159,7 @@ async function api(path, data, signal) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
+            signal: entry?.controller.signal,
           },
     );
     if (!response.ok) {
@@ -176,7 +183,13 @@ async function api(path, data, signal) {
   // The backend intentionally runs one Maia inference task at a time. Queue
   // client requests so parallel Stockfish/whole-game work cannot make Maia
   // return a transient 429 and leave holes in its position cache.
-  const entry = { consumers: 0, started: false, cancelled: false, promise: null };
+  const entry = {
+    consumers: 0,
+    started: false,
+    cancelled: false,
+    controller: new AbortController(),
+    promise: null,
+  };
   const queued = maiaRequestQueue.catch(() => {}).then(() => request(entry));
   entry.promise = queued;
   state.maiaInFlight.set(cacheKey, entry);
