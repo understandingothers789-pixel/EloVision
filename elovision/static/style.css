@@ -2272,6 +2272,7 @@ body.analysis-theme .page-footer { margin-top: 22px; font-size: 9px; border-colo
 .workspace.custom-layout .dock-frame { position: absolute; display: flex; flex-direction: column; min-width: 0; margin: 0; border: 1px solid transparent; border-radius: 6px; }
 .workspace.custom-layout .dock-frame > .dock-content { flex: 1; width: 100%; height: 100%; max-width: none; min-width: 0; min-height: 0; max-height: none; margin: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: #845c6b transparent; }
 .workspace.custom-layout .dock-frame > .game-panel { overflow: hidden; }
+.workspace.custom-layout .analysis-panel > .panel-heading { flex-wrap: wrap; row-gap: 5px; }
 .workspace.custom-layout .game-panel .notation { min-height: 60px; }
 .workspace.custom-layout .game-panel > :not(.notation) { flex-shrink: 0; }
 .workspace.custom-layout .board-panel { padding-top: 8px; }
@@ -2306,6 +2307,19 @@ body.analysis-theme .page-footer { margin-top: 22px; font-size: 9px; border-colo
 .workspace.custom-layout .dock-frame.layout-moving { z-index: 30; border-color: #edc5dc; box-shadow: 0 8px 36px #0008, 0 0 0 2px #c38aaa44; opacity: .94; }
 .layout-dragging, .layout-dragging * { user-select: none !important; }
 .layout-dragging .layout-panel-handle { cursor: grabbing; }
+.board-extras > summary { display: none; }
+body.board-focus-layout .board-extras > summary { display: list-item; padding: 5px 2px; color: #9f929c; cursor: pointer; font-size: 10px; }
+body.board-focus-layout .workspace .board-toolbar { min-height: 28px; margin-top: 6px; padding-inline: 5px; }
+body.board-focus-layout .workspace .board-toolbar .icon-button { height: 25px; }
+body.board-focus-layout .workspace .board-footnote { padding-top: 3px; font-size: 8px; }
+body.board-focus-layout .workspace .board-insight { margin-top: 6px; }
+@media (min-width: 1100px) {
+  body.analysis-theme .topbar { height: 50px; padding-inline: 18px; }
+  body.analysis-theme main { max-width: none; padding: 10px 18px 0; }
+  body.analysis-theme .page-heading { top: 8px; }
+  .workspace-toolbar { margin-bottom: 10px; }
+  .workspace.custom-layout .board-panel { padding-top: 6px; }
+}
 @media (max-width: 600px) {
   .workspace-toolbar { gap: 9px; }
   .layout-actions { width: 100%; gap: 8px; justify-content: space-between; }

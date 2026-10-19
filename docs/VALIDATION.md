@@ -4,7 +4,7 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 
 ## Completed checks
 
-- Adjustable workspaces: **30 passed** with the complete browser/standalone-preview
+- Adjustable workspaces: **31 passed** with the complete browser/standalone-preview
   suite in Chromium against the local server. Checks cover dragging the notebook
   below the board, all eight resize handles, square-board scaling, collision
   handling, keyboard movement/resizing, Escape cancellation, saved layouts,
@@ -13,6 +13,9 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
   graph preserves its controls and does not submit another analysis request.
   Browser rendering fixtures do not validate neural accuracy. JavaScript syntax,
   Ruff on changed Python files, `git diff --check`, and preview generation passed.
+  Board focus additionally verifies a board at least 700 pixels wide on a
+  1920×1080 display, a fully visible square board at 1366×768 and 1600×900,
+  optional statistics, compact desktop spacing, and persistence after customization.
 - NVIDIA Windows environment addition: **45 passed** using
   `pytest -q tests/test_windows_runtime.py tests/test_device.py`. Coverage includes
   the existing AMD path, CUDA wheel selection for older cards and Blackwell,

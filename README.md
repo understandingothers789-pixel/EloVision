@@ -59,6 +59,10 @@ for each page separately. A focused panel header also supports arrow keys to mov
 and **Shift + arrows** to resize; **Esc** cancels an active drag. The preset menu
 offers **Classic layout**, **Board focus** (settings below a shorter notebook),
 and **Notebook below**. **Reset layout** restores the current page's original layout.
+Board focus gives the board more width and height, compacts its navigation controls,
+and puts the less essential statistics behind **Move statistics & position details**.
+Desktop views use a shorter header and the available screen width. In the board-focused
+preset the board itself fits the window height; supporting controls may extend below it.
 On smaller screens panels return to the normal stacked layout; widening the window
 restores the saved arrangement. If browser storage is unavailable, arrangement still
 works for the current session.

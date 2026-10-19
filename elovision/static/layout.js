@@ -21,6 +21,7 @@ let gesture = null;
 let renderFrame = 0;
 let gestureFrame = 0;
 let layouts = readLayouts();
+let focusedBoard = false;
 
 function copy(value) { return JSON.parse(JSON.stringify(value)); }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
@@ -41,6 +42,7 @@ function readLayouts() {
       })) continue;
       result[name] = {
         preset: ["focus", "notebook", "custom"].includes(candidate.preset) ? candidate.preset : "custom",
+        boardFocus: candidate.boardFocus === true || candidate.preset === "focus",
         panels: Object.fromEntries(ids.map((id) => [id, { ...candidate.panels[id] }])),
       };
     }
@@ -120,13 +122,13 @@ function presetLayout(preset) {
     board: rect(0, 0, 14, 45), analysis: rect(14, 0, 10, page === "analysis" ? 23 : 65),
     chart: rect(14, 23, 10, 22), game: rect(0, 45, 14, 24), settings: rect(14, 45, 10, 24),
   } : {
-    game: rect(0, 0, 5, 30), board: rect(5, 0, 12, 51),
-    analysis: rect(17, 0, 7, page === "analysis" ? 24 : 55),
-    chart: rect(17, 24, 7, 23), settings: rect(0, 30, 5, 24),
+    game: rect(0, 0, 5, 30), board: rect(5, 0, 13, 55),
+    analysis: rect(18, 0, 6, page === "analysis" ? 24 : 55),
+    chart: rect(18, 24, 6, 23), settings: rect(0, 30, 5, 24),
   };
   const rects = Object.fromEntries(pagePanels[page].map((id) => [id, result[id]]));
   makeRoom(rects);
-  return { preset, panels: rects };
+  return { preset, boardFocus: preset === "focus", panels: rects };
 }
 
 function attachPanels() {
@@ -162,12 +164,21 @@ function sizeBoard() {
   }
   const style = getComputedStyle(board);
   const available = board.clientHeight - overhead - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-  const size = Math.max(120, Math.min(board.clientWidth - 76, available - 2));
+  const viewportSpace = focusedBoard && layouts[page].panels.board.y === 0
+    ? innerHeight - stage.getBoundingClientRect().top - window.scrollY - 12
+    : Infinity;
+  const size = Math.max(120, Math.min(board.clientWidth - 76, available - 2, viewportSpace));
   board.style.setProperty("--dock-board-size", `${size}px`);
 }
 
 function renderLayout() {
   const active = desktop.matches && Boolean(layouts[page]);
+  const focus = active && Boolean(layouts[page].boardFocus);
+  document.body.classList.toggle("board-focus-layout", focus);
+  if (focus !== focusedBoard) {
+    document.getElementById("board-extras").open = !focus;
+    focusedBoard = focus;
+  }
   if (active) attachPanels();
   else detachPanels();
   workspace.classList.toggle("custom-layout", active);
@@ -321,6 +332,19 @@ for (const [id, definition] of Object.entries(panelDefinitions)) {
   panels[id] = { content, anchor, frame, handle };
 }
 
+function refreshFocusPresets() {
+  if (!desktop.matches) return;
+  // Pure presets follow updated definitions; hand-arranged layouts keep their geometry.
+  const current = page;
+  for (const name of Object.keys(layouts)) {
+    if (layouts[name].preset !== "focus") continue;
+    page = name;
+    layouts[name] = presetLayout("focus");
+  }
+  page = current;
+}
+refreshFocusPresets();
+
 document.getElementById("layout-edit").addEventListener("click", () => {
   if (!desktop.matches) return;
   finishGesture(true);
@@ -378,6 +402,7 @@ document.addEventListener("keydown", (event) => {
 }, true);
 desktop.addEventListener("change", () => {
   finishGesture(true);
+  refreshFocusPresets();
   queueRender();
 });
 new ResizeObserver(() => {
@@ -385,5 +410,7 @@ new ResizeObserver(() => {
     queueRender();
   }
 }).observe(workspace);
+window.addEventListener("resize", queueRender);
 panels.board.content.querySelector(".position-details").addEventListener("toggle", queueRender);
+document.getElementById("board-extras").addEventListener("toggle", queueRender);
 renderLayout();

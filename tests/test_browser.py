@@ -1285,9 +1285,10 @@ def test_layout_drag_resize_persist_and_keep_navigation_on_the_board(page):
     page.locator("#layout-preset").select_option("focus")
     page.locator("#layout-edit").click()
     unit = page.locator(".workspace").bounding_box()["width"] / 24
+    below_board = layout_preferences(page)["panels"]["board"]["h"] + 2
     drag_layout_control(
         page, page.get_by_role("button", name="Move Game notebook", exact=True),
-        unit * 7, 16 * 53,
+        unit * 7, 16 * below_board,
     )
     moved = layout_preferences(page)["panels"]
     assert moved["game"]["x"] == 7 and moved["game"]["y"] >= 52
@@ -1473,3 +1474,37 @@ def test_layout_keeps_live_rating_graph_in_sf_only_without_restarting_analysis(p
     assert len(requests) == count
     assert page.locator("#dual-results").get_attribute("class").endswith("pure-stockfish")
     assert svg.is_visible()
+
+
+def test_board_focus_uses_desktop_space_and_keeps_statistics_optional(page):
+    page.set_viewport_size({"width": 1920, "height": 1080})
+    page.goto(BASE_URL)
+    page.locator("#layout-preset").select_option("focus")
+    expect(page.locator("#board-extras")).not_to_have_attribute("open", "")
+    assert page.locator("#board-insight").is_hidden()
+    board = page.locator("#board").bounding_box()
+    assert board["width"] >= 700
+    assert abs(board["width"] - board["height"]) < 1
+    assert board["y"] + board["height"] <= 1080
+    assert page.locator(".topbar").bounding_box()["height"] == 50
+    workspace = page.locator(".workspace").bounding_box()
+    assert workspace["x"] <= 20 and workspace["width"] >= 1870
+    page.locator("#board-extras > summary").click()
+    assert page.locator("#board-insight").is_visible()
+    page.locator("#board-extras > summary").click()
+    page.locator("#layout-edit").click()
+    page.get_by_role("button", name="Move Game notebook", exact=True).press("ArrowDown")
+    assert layout_preferences(page)["boardFocus"] is True
+    page.locator("#layout-edit").click()
+    page.reload()
+    expect(page.locator("body")).to_have_class("analysis-theme board-focus-layout")
+    assert page.locator("#board-insight").is_hidden()
+    for width, height in ((1366, 768), (1600, 900)):
+        page.set_viewport_size({"width": width, "height": height})
+        page.wait_for_function("""() => {
+            const r = document.getElementById('board').getBoundingClientRect();
+            return r.bottom <= innerHeight;
+        }""")
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.locator("#layout-reset").click()
+    assert page.locator("#board-insight").is_visible()
