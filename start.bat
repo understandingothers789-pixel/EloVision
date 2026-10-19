@@ -6,5 +6,5 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-.venv\Scripts\python.exe -m elovision serve --open
+.venv\Scripts\python.exe -m elovision.windows_runtime start
 if errorlevel 1 pause

@@ -32,7 +32,7 @@ def bind_local_server_socket(preferred_port: int, attempts: int = 100):
     )
 
 
-def main():
+def main(service=None):
     parser = argparse.ArgumentParser(description="ELO Vision — local Maia 3 human chess analysis")
     sub = parser.add_subparsers(dest="command")
     serve = sub.add_parser("serve", help="Start the local browser application")
@@ -84,7 +84,9 @@ def main():
                     time.sleep(0.25)
 
         threading.Thread(target=open_when_ready, daemon=True).start()
-    config = uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="info")
+    config = uvicorn.Config(
+        create_app(service=service), host="127.0.0.1", port=port, log_level="info"
+    )
     try:
         uvicorn.Server(config).run(sockets=[server_socket])
     finally:

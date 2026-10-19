@@ -4,6 +4,15 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 
 ## Completed checks
 
+- Latest Windows CPU/AMD environment changes: **80 passed, 8 skipped** with
+  `pytest -q -m 'not browser'`; 20 browser tests were deselected. Seven skips need
+  real model weights/GPU hardware; one standalone-preview check needs Chromium
+  configuration. Ruff and `git diff --check` passed. The local server started,
+  served HTML and health requests successfully, and was stopped after the check.
+  Windows orchestration tests cover adapter discovery, discrete Radeon selection,
+  CPU/GPU probability comparison validation, partial installs, exact AMD Torch
+  constraints, explicit device overrides, failed inference/native crashes, and
+  CPU fallback. These orchestration tests use mocked subprocesses, not a Windows GPU.
 - Production dependency installation and editable installation with development dependencies.
 - **45 passed, 6 skipped** using the full pytest suite with `ELOVISION_BROWSER_URL` and system Chromium configured. The six skips are explicitly the real-model tests.
 - Chess tests: opening, middlegame and endgame legal moves; both colors; castling, en passant, all promotions; checkmate and stalemate; PGN mainline navigation; variations; multi-game and custom-FEN imports; malformed PGNs and invalid/mismatched histories.
@@ -18,7 +27,11 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 
 - **Official model acquisition:** Python requests retrieved official metadata and the model card, but the weight transfer fails at `us.aws.cdn.hf.co` under the cloud proxy. Both Xet and regular HTTP were tested. Required hosts have been saved in the environment draft. Saving that draft does not apply the runtime network policy or publish a snapshot.
 - **Real 79M inference and benchmarks:** six model tests are skipped, and no latency numbers or accuracy measurements are reported. The app correctly displays an actionable missing-model message.
-- **Windows 11 / Ryzen / RX 9070 XT:** launchers and CPU-only dependency selection are implemented, but actual Windows execution is untested.
+- **Windows 11 / Ryzen / RX 9070 XT:** isolated CPU/AMD installation, adapter detection,
+  real-inference launch checks, and CPU fallback are implemented. Actual Windows
+  execution, AMD package download/installation and RX 9070 XT inference remain
+  untested in the cloud. See [Windows GPU setup](WINDOWS_GPU.md); the installer
+  requires a local real-model CPU/GPU comparison before enabling the AMD environment.
 - **Training rating coverage:** the official source and retrieved model card do not specify rating-specific coverage; the paper has not been retrieved. The card states AGPLv3 and Lichess training data from January 2023 through July 2025. The app labels rating uncertainty, and no weights are redistributed.
 
 ## Finish verification after access is available

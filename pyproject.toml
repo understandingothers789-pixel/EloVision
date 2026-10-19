@@ -14,7 +14,7 @@ dependencies = [
   "uvicorn==0.34.2",
   "python-chess==1.999",
   "numpy==2.2.6",
-  "torch==2.8.0",
+  "torch>=2.8,<3",
   "huggingface-hub==0.32.4",
   "maia3 @ https://github.com/CSSLab/maia3/archive/1e13597c42d4858b7cfd7cfdae01e297263364b2.zip",
 ]

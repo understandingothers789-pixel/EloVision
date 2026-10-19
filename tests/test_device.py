@@ -50,3 +50,15 @@ def test_device_metadata_names_rocm_and_cuda_backends():
     }
     assert cuda["backend"] == "CUDA"
     assert device_details(torch_stub(available=False), "cpu")["device_label"] == "CPU"
+
+
+def test_auto_rocm_prefers_discrete_radeon_over_integrated_graphics():
+    torch = torch_stub(available=True, hip="fixture")
+    properties = [
+        SimpleNamespace(name="AMD Radeon(TM) Graphics", total_memory=32768),
+        SimpleNamespace(name="AMD Radeon RX 9070 XT", total_memory=16384),
+    ]
+    torch.cuda.device_count = lambda: len(properties)
+    torch.cuda.get_device_properties = lambda index: properties[index]
+    assert resolve_device(torch, "auto") == "cuda:1"
+    assert resolve_device(torch, "cuda:0") == "cuda:0"

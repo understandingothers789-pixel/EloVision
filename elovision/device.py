@@ -6,11 +6,26 @@ def resolve_device(torch_module, requested="auto"):
     requested = str(requested).strip().lower()
     if requested == "auto":
         try:
-            return "cuda" if torch_module.cuda.is_available() else "cpu"
+            if not torch_module.cuda.is_available():
+                return "cpu"
         except Exception:
             # A partially installed runtime or inaccessible driver must not
             # prevent the supported CPU fallback from starting.
             return "cpu"
+        if getattr(getattr(torch_module, "version", None), "hip", None):
+            try:
+                count = torch_module.cuda.device_count()
+                if count > 1:
+                    def priority(index):
+                        properties = torch_module.cuda.get_device_properties(index)
+                        # A Ryzen iGPU may be enumerated before the discrete Radeon.
+                        return ("radeon rx" in properties.name.lower(), properties.total_memory)
+
+                    return f"cuda:{max(range(count), key=priority)}"
+            except Exception:
+                # Optional device metadata must not make an available GPU unusable.
+                pass
+        return "cuda"
     if requested.startswith("cuda"):
         try:
             available = torch_module.cuda.is_available()

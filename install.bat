@@ -8,14 +8,10 @@ if errorlevel 1 goto missing_python
 py -3.12 -m venv .venv
 if errorlevel 1 goto failed
 :dependencies
-.venv\Scripts\python.exe -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0
-if errorlevel 1 goto failed
-.venv\Scripts\python.exe -m pip install -e .
-if errorlevel 1 goto failed
-.venv\Scripts\python.exe -m elovision model install
+.venv\Scripts\python.exe -m elovision.windows_runtime install
 if errorlevel 1 goto failed
 echo.
-echo Installation complete. Double-click start.bat to launch ELO Vision.
+echo Setup finished. See the CPU/AMD result above. Run start.bat to launch ELO Vision.
 pause
 exit /b 0
 :missing_python
