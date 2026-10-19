@@ -70,7 +70,9 @@ class StockfishService:
                     message,
                     422,
                 )
-            with chess.engine.SimpleEngine.popen_uci(str(path), timeout=12) as engine:
+            # Large Windows releases can take several seconds to map their embedded
+            # NNUE networks on first launch, especially while antivirus scans them.
+            with chess.engine.SimpleEngine.popen_uci(str(path), timeout=60) as engine:
                 name = engine.id.get("name", "Unknown UCI engine")
                 lower_name = name.lower()
                 valid_name = (
@@ -99,10 +101,13 @@ class StockfishService:
             chess.engine.EngineError,
             chess.engine.EngineTerminatedError,
         ) as exc:
+            reason = str(exc).strip()
+            detail = f" Details: {reason[:240]}" if reason else ""
             raise VisionError(
                 "stockfish_start",
                 "Stockfish could not start. Choose the extracted "
-                "Stockfish executable built for this computer’s operating system and processor.",
+                "Stockfish executable built for this computer’s operating system and processor."
+                + detail,
                 422,
             ) from exc
 
@@ -206,13 +211,24 @@ class StockfishService:
         self._channel = channel
         return {"available": True, "name": name, "channel": channel}
 
-    def analyze(self, request: PredictionRequest, depth: int = 16, multipv: int = 5):
+    def analyze(
+        self,
+        request: PredictionRequest,
+        depth: int = 16,
+        multipv: int = 5,
+        hash_mb: int = 8192,
+        threads: int = 14,
+    ):
         if not 10 <= depth <= 22:
             raise VisionError("stockfish_depth", "Choose a search depth between 10 and 22.", 422)
         if not 1 <= multipv <= 12:
             raise VisionError(
                 "stockfish_multipv", "Request between one and twelve engine lines.", 422
             )
+        if not 1 <= hash_mb <= 65536:
+            raise VisionError("stockfish_hash", "Choose a hash size between 1 MiB and 64 GiB.", 422)
+        if not 1 <= threads <= 256:
+            raise VisionError("stockfish_threads", "Choose between 1 and 256 engine threads.", 422)
         board = replay_position(request.fen, request.initial_fen, list(request.moves))
         if not board.legal_moves.count():
             return {
@@ -252,14 +268,26 @@ class StockfishService:
                             f"as {name}.",
                             422,
                         )
-                    threads = max(
-                        1, min(8, int(os.environ.get("ELOVISION_STOCKFISH_THREADS", "2")))
-                    )
                     options = {}
-                    if "Threads" in engine.options:
-                        options["Threads"] = threads
-                    if "Hash" in engine.options:
-                        options["Hash"] = 256
+                    for option_name, value in (("Threads", threads), ("Hash", hash_mb)):
+                        option = engine.options.get(option_name)
+                        if option is None:
+                            continue
+                        if option.min is not None and value < option.min:
+                            raise VisionError(
+                                "stockfish_option_limit",
+                                f"This engine requires {option_name} to be at least {option.min}.",
+                                422,
+                            )
+                        if option.max is not None and value > option.max:
+                            unit = " MiB" if option_name == "Hash" else " threads"
+                            raise VisionError(
+                                "stockfish_option_limit",
+                                f"This engine supports {option_name} up to {option.max}{unit}. "
+                                "Lower that setting and retry.",
+                                422,
+                            )
+                        options[option_name] = value
                     if options:
                         engine.configure(options)
                     infos = engine.analyse(
@@ -276,9 +304,11 @@ class StockfishService:
                 chess.engine.EngineError,
                 chess.engine.EngineTerminatedError,
             ) as exc:
+                reason = str(exc).strip()
+                detail = f" Details: {reason[:240]}" if reason else ""
                 raise VisionError(
                     "stockfish_analysis",
-                    "Stockfish stopped during analysis. Retry or choose the engine again.",
+                    "Stockfish stopped during analysis. Retry or choose the engine again." + detail,
                     503,
                 ) from exc
         if isinstance(infos, dict):

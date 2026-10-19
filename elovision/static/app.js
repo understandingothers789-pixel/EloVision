@@ -1257,6 +1257,8 @@ $("show-variations").addEventListener("change", () => {
 });
 $("stockfish-depth").addEventListener("change", () => analyzeStockfish(true));
 $("stockfish-lines-count").addEventListener("change", () => analyzeStockfish(true));
+$("stockfish-hash").addEventListener("change", () => analyzeStockfish(true));
+$("stockfish-threads").addEventListener("change", () => analyzeStockfish(true));
 function clearStockfishResult() {
   state.stockfish = null;
   state.stockfishPositionKey = null;
@@ -1321,9 +1323,21 @@ function renderStockfish(result) {
   }
 }
 function stockfishRequestKey() {
-  return `${JSON.stringify(payload())}|${$("stockfish-depth").value}|${$("stockfish-lines-count").value}`;
+  return `${JSON.stringify(payload())}|${$("stockfish-depth").value}|${$("stockfish-lines-count").value}|${$("stockfish-hash").value}|${$("stockfish-threads").value}`;
 }
 async function analyzeStockfish(force = false) {
+  const hashGb = Number($("stockfish-hash").value);
+  const threads = Number($("stockfish-threads").value);
+  if (!Number.isInteger(hashGb) || hashGb < 1 || hashGb > 64) {
+    engineMessage("Choose a Hash size from 1 to 64 GB.");
+    $("stockfish-hash").focus();
+    return;
+  }
+  if (!Number.isInteger(threads) || threads < 1 || threads > 256) {
+    engineMessage("Choose between 1 and 256 Stockfish threads.");
+    $("stockfish-threads").focus();
+    return;
+  }
   if (!state.position || !state.stockfishAvailable) {
     if (state.mode === "stockfish") engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
     return;
@@ -1334,7 +1348,9 @@ async function analyzeStockfish(force = false) {
   const requestPosition = JSON.stringify(payload());
   const requestDepth = Number($("stockfish-depth").value);
   const requestMultiPv = Number($("stockfish-lines-count").value);
-  const requestPayload = { ...payload(), depth: requestDepth, multipv: requestMultiPv };
+  const requestHashMb = hashGb * 1024;
+  const requestThreads = threads;
+  const requestPayload = { ...payload(), depth: requestDepth, multipv: requestMultiPv, hash_mb: requestHashMb, threads: requestThreads };
   button.disabled = true;
   engineMessage("Stockfish is searching this position…");
   try {
@@ -1345,7 +1361,7 @@ async function analyzeStockfish(force = false) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
-    if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv) return;
+    if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv || Number($("stockfish-hash").value) * 1024 !== requestHashMb || Number($("stockfish-threads").value) !== requestThreads) return;
     state.stockfish = data;
     state.stockfishPositionKey = key;
     renderStockfish(data);

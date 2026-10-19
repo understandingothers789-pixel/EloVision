@@ -1733,6 +1733,16 @@ textarea {
   padding: 5px 6px;
   font-size: 9px;
 }
+.dual-toolbar input[type='number'] {
+  width: 68px;
+  min-height: 27px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 10px;
+}
 .dual-toolbar .button {
   padding: 6px 10px;
   font-size: 9px;
@@ -2126,6 +2136,7 @@ body.analysis-theme .square.dark.last { background: #aeb34d; }
 .workspace.analysis-layout .rating-control input[type='range'] { margin: 12px 0 8px; accent-color: #e3c3d3; }
 .workspace.analysis-layout .dual-toolbar { gap: 9px; background: #221d22; padding: 12px; border-bottom: 0; }
 .workspace.analysis-layout .dual-toolbar select { font-size: 10px; padding: 6px; }
+.workspace.analysis-layout .dual-toolbar input[type='number'] { font-size: 10px; padding: 6px; }
 .workspace.analysis-layout .dual-toolbar .button { font-size: 11px; padding: 6px 14px; }
 .workspace.analysis-layout .dual-toolbar.pure-stockfish > label:first-child { display: none; }
 .workspace.analysis-layout .stockfish-panel { margin: 0; background: #242025; border-color: var(--line); }

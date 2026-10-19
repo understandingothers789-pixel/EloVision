@@ -10,17 +10,21 @@ from elovision.errors import VisionError
 from elovision.stockfish import MAX_ENGINE_BYTES, MAX_ENGINE_SIZE_LABEL, StockfishService
 
 FAKE_STOCKFISH = f"""#!{sys.executable}
+import os
 import sys
 for raw in sys.stdin:
     line = raw.strip()
     if line == "uci":
         print("id name Stockfish 19 protocol fixture")
-        print("option name Threads type spin default 1 min 1 max 8")
-        print("option name Hash type spin default 16 min 1 max 1024")
+        print("option name Threads type spin default 1 min 1 max 256")
+        print("option name Hash type spin default 16 min 1 max 32768")
         print("option name MultiPV type spin default 1 min 1 max 5")
         print("uciok", flush=True)
     elif line == "isready":
         print("readyok", flush=True)
+    elif line.startswith("setoption"):
+        with open(os.environ["ELOVISION_TEST_UCI_LOG"], "a", encoding="utf-8") as log:
+            log.write(line + "\\n")
     elif line.startswith("go "):
         print("info depth 16 multipv 1 score cp 35 pv e2e4", flush=True)
         print("info depth 16 multipv 2 score cp 21 pv d2d4", flush=True)
@@ -32,8 +36,10 @@ for raw in sys.stdin:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The protocol fixture uses a Unix executable script.")
-def test_stockfish_upload_and_multipv_api(tmp_path):
+def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
     service = StockfishService(tmp_path / ".engines")
+    uci_log = tmp_path / "uci-options.log"
+    monkeypatch.setenv("ELOVISION_TEST_UCI_LOG", str(uci_log))
     with TestClient(create_app(stockfish_service=service)) as client:
         assert client.get("/api/v1/engine/status").json()["available"] is False
         installed = client.post(
@@ -56,6 +62,9 @@ def test_stockfish_upload_and_multipv_api(tmp_path):
         assert [line["san"] for line in result["lines"]] == ["e4", "d4", "Nf3"]
         assert [line["score"] for line in result["lines"]] == ["+0.35", "+0.21", "+0.12"]
         assert result["channel"] == "official19"
+        configured = uci_log.read_text(encoding="utf-8")
+        assert "setoption name Threads value 14" in configured
+        assert "setoption name Hash value 8192" in configured
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The protocol fixture uses a Unix executable script.")

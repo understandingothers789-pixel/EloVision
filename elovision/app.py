@@ -70,6 +70,8 @@ class PgnInput(BaseModel):
 class StockfishInput(PositionInput):
     depth: int = Field(default=16, ge=10, le=22)
     multipv: int = Field(default=5, ge=1, le=12)
+    hash_mb: int = Field(default=8192, ge=1, le=65536)
+    threads: int = Field(default=14, ge=1, le=256)
 
 
 def create_app(
@@ -246,7 +248,14 @@ def create_app(
 
     @app.post("/api/v1/engine/analyze")
     async def stockfish_analyze(data: StockfishInput):
-        return await stockfish_work(stockfish.analyze, data.prediction(), data.depth, data.multipv)
+        return await stockfish_work(
+            stockfish.analyze,
+            data.prediction(),
+            data.depth,
+            data.multipv,
+            data.hash_mb,
+            data.threads,
+        )
 
     @app.get("/api/v1/samples")
     def samples():

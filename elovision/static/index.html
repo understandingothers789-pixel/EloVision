@@ -304,7 +304,9 @@
             <div id="analysis-control-slot"></div>
             <div class="dual-toolbar">
               <label>Human moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
-              <label>Engine lines<select id="stockfish-lines-count"><option value="5">5 lines</option><option value="8">8 lines</option><option value="12">12 lines</option></select></label>
+              <label>MultiPV<select id="stockfish-lines-count"><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option><option value="5" selected>5 lines</option><option value="6">6 lines</option><option value="8">8 lines</option><option value="10">10 lines</option><option value="12">12 lines</option></select></label>
+              <label>Hash (GB)<input id="stockfish-hash" type="number" min="1" max="64" step="1" value="8" inputmode="numeric" /></label>
+              <label>Threads<input id="stockfish-threads" type="number" min="1" max="256" step="1" value="14" inputmode="numeric" /></label>
               <label>Depth<select id="stockfish-depth"><option value="12">12 · quick</option><option value="16" selected>16 · balanced</option><option value="18">18 · deeper</option><option value="20">20 · deepest</option></select></label>
               <label>Arrows per model<select id="analysis-arrows"><option value="1">Top move</option><option value="3" selected>Top 3</option><option value="5">Top 5</option><option value="all">All displayed</option></select></label>
               <label class="variation-toggle"><input id="show-variations" type="checkbox" /> Show variations</label>

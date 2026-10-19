@@ -175,6 +175,7 @@ def test_browser_does_not_display_stale_analysis(page):
 def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     errors = []
     requested = []
+    engine_requested = []
     page.on("pageerror", lambda error: errors.append(str(error)))
 
     def fixture(route):
@@ -217,9 +218,10 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
             }
         ),
     )
-    page.route(
-        "**/api/v1/engine/analyze",
-        lambda route: route.fulfill(
+
+    def engine_fixture(route):
+        engine_requested.append(json.loads(route.request.post_data))
+        route.fulfill(
             json={
                 "engine": "Stockfish 19 browser fixture",
                 "channel": "official19",
@@ -247,11 +249,18 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
                     },
                 ],
             }
-        ),
-    )
+        )
+
+    page.route("**/api/v1/engine/analyze", engine_fixture)
     page.goto(BASE_URL)
     page.locator("#dual-human-moves .move-prediction").nth(4).wait_for()
     page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
+    assert page.locator("#stockfish-lines-count").input_value() == "5"
+    assert page.locator("#stockfish-hash").input_value() == "8"
+    assert page.locator("#stockfish-threads").input_value() == "14"
+    assert engine_requested[-1]["multipv"] == 5
+    assert engine_requested[-1]["hash_mb"] == 8192
+    assert engine_requested[-1]["threads"] == 14
     assert page.locator("#dual-results .dual-column").count() == 2
     assert page.locator("#maia-gauge-marker").text_content().endswith("%")
     assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
