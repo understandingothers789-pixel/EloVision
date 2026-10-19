@@ -215,6 +215,7 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
                 "available": True,
                 "name": "Stockfish 19 browser fixture",
                 "channel": "official19",
+                "host": "Windows AMD64",
             }
         ),
     )
@@ -317,9 +318,51 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator(".human-column").is_visible()
     page.locator("#stockfish-panel > summary").click()
     assert page.locator("#stockfish-channel").is_visible()
+    assert (
+        page.locator("#stockfish-host").text_content()
+        == "Engine runs on this computer: Windows AMD64"
+    )
     page.locator("#stockfish-channel").select_option("development")
     assert "tests.stockfishchess.org" in page.locator("#stockfish-download").get_attribute("href")
     assert not errors
+
+
+def test_browser_shows_stockfish_install_error_in_engine_setup(page):
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={
+                "available": False,
+                "name": None,
+                "channel": "official19",
+                "host": "Windows AMD64",
+            }
+        ),
+    )
+    page.route(
+        "**/api/v1/engine/install",
+        lambda route: route.fulfill(
+            status=422,
+            json={
+                "error": {
+                    "code": "stockfish_platform",
+                    "message": "This is a Linux engine. Choose the build for Windows.",
+                }
+            },
+        ),
+    )
+    page.goto(BASE_URL)
+    page.locator("#stockfish-panel > summary").click()
+    page.locator("#stockfish-file").evaluate(
+        "input => { const transfer = new DataTransfer(); "
+        "transfer.items.add(new File(['engine'], 'stockfish.exe')); "
+        "input.files = transfer.files; "
+        "input.dispatchEvent(new Event('change', { bubbles: true })); }"
+    )
+    page.locator("#stockfish-error").filter(has_text="stockfish_platform:").wait_for()
+    assert page.locator("#stockfish-error").is_visible()
+    assert "Choose the build for Windows" in page.locator("#stockfish-error").text_content()
+    assert page.locator("#stockfish-panel").evaluate("el => el.open")
 
 
 def test_browser_upload_accepts_150_mib_engine_file(page):

@@ -2147,6 +2147,8 @@ body.analysis-theme .square.dark.last { background: #aeb34d; }
 .workspace.analysis-layout .stockfish-controls p,
 .workspace.analysis-layout .stockfish-controls label,
 .workspace.analysis-layout .engine-install-note { font-size: 10px; }
+.workspace.analysis-layout .engine-host { margin: 0 0 8px; color: #a99aa3; font-size: 9px; }
+.workspace.analysis-layout .engine-error { margin: 0 0 10px; padding: 9px 10px; border: 1px solid #a65e58; border-radius: 4px; background: #382121; color: #ffd7cf; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .workspace.analysis-layout .engine-install-row a { font-size: 10px; color: #b5a1ad; }
 .move-inspector { position: fixed; z-index: 100; width: 220px; border: 1px solid #4d3d47; border-radius: 5px; background: #1d181df5; padding: 10px 13px; box-shadow: 0 5px 25px #0006; pointer-events: none; font-size: 12px; color: #e0d4db; }
 .inspector-move { display: block; padding-bottom: 8px; margin-bottom: 5px; border-bottom: 1px solid #42323d; color: #f4d87a; font-size: 14px; }

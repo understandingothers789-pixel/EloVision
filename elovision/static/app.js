@@ -1270,6 +1270,12 @@ function engineMessage(message, className = "") {
   const line = node("div", `stockfish-loading${className ? ` ${className}` : ""}`, message);
   $("stockfish-results").replaceChildren(line);
 }
+function stockfishError(message = "") {
+  const panel = $("stockfish-panel");
+  $("stockfish-error").textContent = message;
+  $("stockfish-error").hidden = !message;
+  if (message) panel.open = true;
+}
 function setStockfishChannelLink() {
   const development = $("stockfish-channel").value === "development";
   const link = $("stockfish-download");
@@ -1281,6 +1287,7 @@ async function refreshStockfishStatus() {
   try {
     const result = await api("engine/status");
     state.stockfishAvailable = Boolean(result.available);
+    $("stockfish-host").textContent = result.host ? `Engine runs on this computer: ${result.host}` : "";
     if (result.available && result.channel) $("stockfish-channel").value = result.channel;
     $("stockfish-status").textContent = result.available
       ? `${result.name} · ready`
@@ -1290,6 +1297,7 @@ async function refreshStockfishStatus() {
       : "Stockfish 19: Engine Moves";
     $("stockfish-analyze").disabled = !result.available;
     if (result.message) $("stockfish-status").title = result.message;
+    stockfishError(result.message || "");
     setStockfishChannelLink();
     if (result.available && state.position && ["dual", "stockfish"].includes(state.mode))
       analyzeStockfish();
@@ -1297,6 +1305,7 @@ async function refreshStockfishStatus() {
     state.stockfishAvailable = false;
     $("stockfish-status").textContent = "Stockfish is unavailable";
     $("stockfish-status").title = error.message;
+    stockfishError(error.message);
   }
 }
 function renderStockfish(result) {
@@ -1360,7 +1369,7 @@ async function analyzeStockfish(force = false) {
       body: JSON.stringify(requestPayload),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
+    if (!response.ok) throw new Error(`${data.error?.code ? `${data.error.code}: ` : ""}${data.error?.message || `Engine request failed (${response.status}).`}`);
     if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv || Number($("stockfish-hash").value) * 1024 !== requestHashMb || Number($("stockfish-threads").value) !== requestThreads) return;
     state.stockfish = data;
     state.stockfishPositionKey = key;
@@ -1372,15 +1381,21 @@ async function analyzeStockfish(force = false) {
     renderGauges();
     renderMoveArrows();
   } catch (error) {
-    if (JSON.stringify(payload()) === requestPosition) engineMessage(error.message);
+    if (JSON.stringify(payload()) === requestPosition) {
+      engineMessage(error.message);
+      stockfishError(error.message);
+    }
   } finally {
     button.disabled = !state.stockfishAvailable;
   }
 }
 async function installStockfish(file) {
   if (!file) return;
+  stockfishError();
   if (file.size > MAX_ENGINE_BYTES) {
-    engineMessage("Choose a Stockfish executable no larger than 512 MiB (about 537 MB).");
+    const message = "Choose a Stockfish executable no larger than 512 MiB (about 537 MB).";
+    engineMessage(message);
+    stockfishError(message);
     return;
   }
   const channel = $("stockfish-channel").value;
@@ -1395,7 +1410,7 @@ async function installStockfish(file) {
       body: file,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error?.message || `Engine install failed (${response.status}).`);
+    if (!response.ok) throw new Error(`${data.error?.code ? `${data.error.code}: ` : ""}${data.error?.message || `Engine install failed (${response.status}).`}`);
     state.stockfishAvailable = true;
     state.stockfish = null;
     state.stockfishPositionKey = null;
@@ -1404,12 +1419,14 @@ async function installStockfish(file) {
     $("stockfish-channel").value = data.channel;
     $("stockfish-analyze").disabled = false;
     engineMessage(`${data.name} is ready.`);
+    stockfishError();
     setStockfishChannelLink();
     if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish(true);
   } catch (error) {
     state.stockfishAvailable = false;
     $("stockfish-status").textContent = "Engine setup needs attention";
     engineMessage(error.message);
+    stockfishError(error.message);
   } finally {
     $("stockfish-choose").disabled = false;
     $("stockfish-file").value = "";

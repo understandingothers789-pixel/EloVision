@@ -1,6 +1,7 @@
 """Optional, user-supplied Stockfish 19 UCI engine integration."""
 
 import os
+import platform
 import sys
 import tempfile
 import threading
@@ -112,13 +113,25 @@ class StockfishService:
             ) from exc
 
     def status(self):
+        host = f"{platform.system()} {platform.machine()}"
         try:
             name = self._identify(self._engine_path)
         except VisionError as exc:
             if exc.code == "stockfish_missing":
-                return {"available": False, "name": None, "channel": self._channel}
-            return {"available": False, "name": None, "channel": self._channel, "message": str(exc)}
-        return {"available": True, "name": name, "channel": self._channel}
+                return {
+                    "available": False,
+                    "name": None,
+                    "channel": self._channel,
+                    "host": host,
+                }
+            return {
+                "available": False,
+                "name": None,
+                "channel": self._channel,
+                "host": host,
+                "message": str(exc),
+            }
+        return {"available": True, "name": name, "channel": self._channel, "host": host}
 
     def install(self, filename: str, content: bytes, channel: str = "official19"):
         """Compatibility wrapper for callers that already hold an in-memory upload."""
