@@ -33,6 +33,7 @@ const state = {
   timer: null,
   controller: null,
 };
+let maiaRequestQueue = Promise.resolve();
 
 function node(tag, className, text) {
   const el = document.createElement(tag);
@@ -92,33 +93,47 @@ async function api(path, data, signal) {
     const cached = readMaiaCache(data);
     if (cached) return cached;
   }
-  const response = await fetch(
-    localUrl(`api/v1/${path}`),
-    data === undefined
-      ? { signal }
-      : {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-          signal,
-        },
-  );
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    const error = new Error(
-      data.error?.message || `Request failed (${response.status}).`,
+  const request = async () => {
+    if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError");
+    if (cacheKey) {
+      const cached = readMaiaCache(data);
+      if (cached) return cached;
+    }
+    const response = await fetch(
+      localUrl(`api/v1/${path}`),
+      data === undefined
+        ? { signal }
+        : {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+            signal,
+          },
     );
-    error.status = response.status;
-    error.code = data.error?.code;
-    throw error;
-  }
-  const result = await response.json();
-  if (cacheKey && Array.isArray(result.predictions)) {
-    state.maiaCache.set(cacheKey, structuredClone(result));
-    while (state.maiaCache.size > 256)
-      state.maiaCache.delete(state.maiaCache.keys().next().value);
-  }
-  return result;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(
+        errorData.error?.message || `Request failed (${response.status}).`,
+      );
+      error.status = response.status;
+      error.code = errorData.error?.code;
+      throw error;
+    }
+    const result = await response.json();
+    if (cacheKey && Array.isArray(result.predictions)) {
+      state.maiaCache.set(cacheKey, structuredClone(result));
+      while (state.maiaCache.size > 256)
+        state.maiaCache.delete(state.maiaCache.keys().next().value);
+    }
+    return result;
+  };
+  if (!cacheKey) return request();
+  // The backend intentionally runs one Maia inference task at a time. Queue
+  // client requests so parallel Stockfish/whole-game work cannot make Maia
+  // return a transient 429 and leave holes in its position cache.
+  const queued = maiaRequestQueue.catch(() => {}).then(request);
+  maiaRequestQueue = queued.then(() => undefined, () => undefined);
+  return queued;
 }
 function payload() {
   const base = { fen: state.position.fen };
@@ -156,6 +171,16 @@ function analysisRequest() {
   if (matchups) request.matchups = matchups;
   else request.ratings = selectedRatings();
   return request;
+}
+function maiaRequestForPosition(position) {
+  const player = Number($("elo").value);
+  const opponent = $("dual-equal").checked
+    ? player
+    : Number($("dual-opponent-elo").value);
+  return {
+    ...position,
+    matchups: [{ player_elo: player, opponent_elo: opponent }],
+  };
 }
 function renderBoard() {
   const pos = state.position;
@@ -378,9 +403,16 @@ function scheduleAnalysis(delay = 0) {
   if (state.mode === "stockfish") {
     $("loading").hidden = true;
     $("analysis-indicator").textContent = state.stockfishAvailable ? "STOCKFISH" : "ENGINE NEEDED";
-    if (state.stockfishAvailable) state.timer = setTimeout(() => analyzeStockfish(), delay);
+    if (state.stockfishAvailable) state.timer = setTimeout(() => {
+      const controller = new AbortController();
+      state.controller = controller;
+      const maiaTask = analyzeMaiaInBackground(payload(), controller.signal);
+      analyzeStockfish();
+      maiaTask.then(() => {
+        if (revision === state.revision) loadRatingComparisonChart(revision);
+      });
+    }, delay);
     else engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
-    loadRatingComparisonChart(revision);
     return;
   }
   $("loading").hidden = state.mode === "dual" || Boolean(cachedMaia);
@@ -448,6 +480,11 @@ async function analyze(revision) {
   } finally {
     if (revision === state.revision) $("loading").hidden = true;
   }
+}
+function analyzeMaiaInBackground(position, signal) {
+  // Keep Maia warm and cache this position even in Stockfish-only view. Its
+  // request is independent of the visible engine panel and runs concurrently.
+  return api("analyze", maiaRequestForPosition(position), signal).catch(() => null);
 }
 const pct = (p) => `${(p * 100).toFixed(2)}%`;
 function limitRows(rows, selector = "maia-move-limit") {
@@ -1509,6 +1546,8 @@ async function analyzeWholeGame() {
   updateWholeGameButton();
   const total = game.positions.length;
   let completed = 0;
+  let maiaCompleted = 0;
+  let maiaError = "";
   try {
     for (let ply = 0; ply < total; ply += 1) {
       if (controller.signal.aborted) break;
@@ -1518,31 +1557,46 @@ async function analyzeWholeGame() {
         moves: game.moves.slice(0, ply).map((move) => move.uci),
       };
       const key = stockfishRequestKey(positionPayload, settings);
-      if (!state.stockfishCache.has(key)) {
-        $("whole-game-status").textContent = `Analyzing position ${ply + 1} of ${total} · depth ${settings.depth}, MultiPV ${settings.multipv}`;
-        const response = await fetch(localUrl("api/v1/engine/analyze"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...positionPayload,
-            depth: settings.depth,
-            multipv: settings.multipv,
-            hash_mb: settings.hash * 1024,
-            threads: settings.threads,
-          }),
-          signal: controller.signal,
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
-        rememberStockfishResult(key, data);
-        if (state.game === game && state.position?.fen === positionPayload.fen && key === stockfishRequestKey())
-          showStockfishResult(data, key, false);
+      $("whole-game-status").textContent = `Analyzing position ${ply + 1} of ${total} · Maia + Stockfish · depth ${settings.depth}, MultiPV ${settings.multipv}`;
+      const cachedEngine = state.stockfishCache.get(key);
+      const engineTask = cachedEngine
+        ? Promise.resolve(cachedEngine)
+        : (async () => {
+            const response = await fetch(localUrl("api/v1/engine/analyze"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...positionPayload,
+                depth: settings.depth,
+                multipv: settings.multipv,
+                hash_mb: settings.hash * 1024,
+                threads: settings.threads,
+              }),
+              signal: controller.signal,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
+            rememberStockfishResult(key, data);
+            return data;
+          })();
+      const maiaTask = maiaError
+        ? Promise.resolve(null)
+        : api("analyze", maiaRequestForPosition(positionPayload), controller.signal);
+      const [engineResult, maiaResult] = await Promise.allSettled([engineTask, maiaTask]);
+      if (engineResult.status === "rejected") throw engineResult.reason;
+      if (maiaResult.status === "fulfilled" && maiaResult.value) {
+        maiaCompleted += 1;
+      } else if (maiaResult.status === "rejected" && maiaResult.reason.name !== "AbortError") {
+        maiaError = maiaResult.reason.message;
       }
+      const data = engineResult.value;
+      if (state.game === game && state.position?.fen === positionPayload.fen && key === stockfishRequestKey())
+        showStockfishResult(data, key, false);
       completed += 1;
-      $("whole-game-status").textContent = `Analyzed ${completed} of ${total} positions`;
+      $("whole-game-status").textContent = `Analyzed ${completed} of ${total} positions · Maia cached ${maiaCompleted}${maiaError ? ` · Maia unavailable: ${maiaError}` : ""}`;
     }
-    if (controller.signal.aborted) $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed`;
-    else $("whole-game-status").textContent = `Complete · ${completed} positions analyzed`;
+    if (controller.signal.aborted) $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed · Maia cached ${maiaCompleted}`;
+    else $("whole-game-status").textContent = `Complete · ${completed} positions analyzed · Maia cached ${maiaCompleted}${maiaError ? ` · unavailable: ${maiaError}` : ""}`;
   } catch (error) {
     if (error.name === "AbortError") $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed`;
     else $("whole-game-status").textContent = `Stopped at ${completed + 1} of ${total}: ${error.message}`;

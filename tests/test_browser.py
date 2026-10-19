@@ -338,6 +338,12 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#whole-game-status").filter(
         has_text="Complete · 34 positions analyzed"
     ).wait_for()
+    page.locator("#whole-game-status").filter(has_text="Maia cached 34").wait_for()
+    whole_game_maia = [
+        request for request in requested
+        if len(request.get("matchups", [])) == 1 and "initial_fen" in request
+    ]
+    assert {len(request["moves"]) for request in whole_game_maia} == set(range(34))
     assert all(item["multipv"] == 5 for item in engine_requested)
     assert page.locator("#maia-gauge-marker").text_content().endswith("%")
     assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
@@ -395,9 +401,17 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator(".human-column").is_hidden()
     assert page.locator(".rating-chart-panel").is_visible()
     assert page.locator(".stockfish-line .engine-pv").first.is_visible()
+    page.locator("#next").click()
+    page.locator("#stockfish-results .stockfish-line").first.wait_for()
+    assert any(
+        len(request.get("moves", [])) == 1
+        and request.get("matchups") == [{"player_elo": 2400, "opponent_elo": 1200}]
+        for request in requested
+    )
     page.locator("#view-dual").click()
     assert "pure-stockfish" not in page.locator("#dual-results").get_attribute("class")
     assert page.locator(".human-column").is_visible()
+    page.locator("#dual-human-moves .comparison-move").first.wait_for()
     page.locator("#settings-tab-engine").click()
     assert page.locator("#settings-panel-engine").is_visible()
     assert page.locator("#settings-panel-options").is_hidden()
