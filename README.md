@@ -10,7 +10,7 @@ The delivery ZIP includes **`preview.html`**, a self-contained page with its sty
 piece graphics and the real sample-game positions embedded. It works in an isolated
 HTML visualization without a Python server or network access. Sample-game navigation,
 board flipping and rating controls work; PGN imports, custom FENs and neural analysis
-require the locally running app. No probabilities are simulated in the preview.
+require the locally running app. No probabilities or Stockfish evaluations are simulated in the preview.
 
 Do not open `elovision/static/index.html` directly in a chat visualization: that is the
 server's entry point and depends on separate assets and the Python API. Developers can
@@ -33,13 +33,14 @@ The recommended initial device is **CPU**, including on the Ryzen 7 9800X3D / RX
 - One to eight side-by-side rating predictions. Generate ratings around 1800 using 100, 200, 400, or custom spacing, then edit each Elo directly. The default set is 1400, 1800, 2200.
 - Each rating column shows the top five moves with a shared all-moves option.
 - Top move arrows on the board use Elo colors; higher Elo arrows appear on top when moves overlap.
+- Optional Stockfish 19 analysis displays its best lines, principal variations, and evaluations next to Maia's human-choice probabilities. Install the official engine from the Stockfish panel; see [Stockfish setup](docs/STOCKFISH.md).
 - Edit player and opponent ratings independently in 100-point steps, or link equal-rated opponents.
 - Explore nine bundled sample games and studies, including the Opera, Immortal, and Evergreen games.
 - Single-rating exploration, two-rating comparison with signed percentage-point differences and five sorting options, and the full 14-rating spectrum.
 - All 14 rating groups, a scrollable legal-move matrix, and a move-specific line chart.
 - Full-precision CSV/JSON exports with FEN, game/ply, rating conditions, history, and model provenance.
 - A reusable, versioned Python/HTTP backend for later [Nocturne reuse](docs/BACKEND.md), without any Nocturne integration.
-- Lazy model loading once per session, bounded history-aware LRU cache, background inference, request debouncing, and rejection of stale UI responses.
+- Lazy model loading once per session, bounded history-aware LRU cache, background inference and Stockfish search, request debouncing, and rejection of stale UI responses.
 
 ## Linux / macOS development
 
@@ -69,7 +70,7 @@ python -m elovision model install --force  # explicitly replace corrupted or out
 
 Normal inference reads only these local files and uses `torch.load(weights_only=True)` with strict state-dict loading. The adapter reuses upstream preprocessing, eight-position history, 4352-entry move vocabulary, black-side mirroring, promotion encoding, legal masking, and unmodified softmax. It does not use UCI MultiPV, a sampling temperature, top-k, top-p filtering, or a chess engine as a substitute. See [research notes](docs/MAIA.md).
 
-For an offline PC, install on a connected machine with the same OS/Python version first, then copy the project including `.models` and prepare an appropriate local wheelhouse. Virtual environments should be recreated on the destination machine, not moved between operating systems. All frontend resources are bundled.
+For an offline PC, install on a connected machine with the same OS/Python version first, then copy the project including `.models` and `.engines` and prepare an appropriate local wheelhouse. Virtual environments should be recreated on the destination machine, not moved between operating systems. All frontend resources are bundled.
 
 Optional local settings:
 

@@ -186,6 +186,30 @@
             <button class="tab" role="tab" aria-selected="false" id="tab-compare" data-mode="compare">Compare</button>
             <button class="tab" role="tab" aria-selected="false" id="tab-spectrum" data-mode="spectrum">Spectrum</button>
           </div>
+          <details id="stockfish-panel" class="stockfish-panel" open>
+            <summary>
+              <span><strong>Stockfish 19</strong><small id="stockfish-status">Checking local engine…</small></span>
+              <span class="engine-summary-mark">⌄</span>
+            </summary>
+            <div class="stockfish-controls">
+              <p>Maia shows human choices; Stockfish evaluates chess strength.</p>
+              <label for="stockfish-depth">Search depth</label>
+              <select id="stockfish-depth">
+                <option value="12">12 · quick</option>
+                <option value="16" selected>16 · balanced</option>
+                <option value="18">18 · deeper</option>
+                <option value="20">20 · deepest</option>
+              </select>
+              <button id="stockfish-analyze" class="button secondary" disabled>Analyze this position</button>
+              <div class="engine-install-row">
+                <button id="stockfish-choose" class="text-button">Choose Stockfish 19 file…</button>
+                <input id="stockfish-file" type="file" accept=".exe,.bin" hidden />
+                <a href="https://stockfishchess.org/download/" target="_blank" rel="noopener">Official download ↗</a>
+              </div>
+              <small class="engine-install-note">Download the build for this computer, extract the archive, then choose its engine executable here.</small>
+            </div>
+            <div id="stockfish-results" class="stockfish-results" aria-live="polite"></div>
+          </details>
           <div class="rating-control">
             <div class="rating-heading">
               <div>

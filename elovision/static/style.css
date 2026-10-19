@@ -1432,3 +1432,125 @@ textarea {
   grid-template-columns: repeat(var(--rating-count, 3), minmax(100px, 1fr));
   overflow-x: auto;
 }
+.stockfish-panel {
+  margin: 0 18px 14px;
+  border: 1px solid #354637;
+  border-radius: 7px;
+  background: #19211b;
+}
+.stockfish-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.stockfish-panel > summary::-webkit-details-marker {
+  display: none;
+}
+.stockfish-panel > summary strong,
+.stockfish-panel > summary small {
+  display: block;
+}
+.stockfish-panel > summary strong {
+  font-size: 11px;
+}
+.stockfish-panel > summary small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.engine-summary-mark {
+  color: var(--accent);
+  font-size: 14px;
+}
+.stockfish-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.stockfish-controls p,
+.engine-install-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.stockfish-controls > label {
+  font-size: 9px;
+  color: var(--muted);
+}
+.stockfish-controls > select {
+  justify-self: end;
+  padding: 5px;
+  font-size: 9px;
+}
+.stockfish-controls .button {
+  grid-column: 1 / -1;
+  padding: 7px 10px;
+  font-size: 10px;
+}
+.engine-install-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.engine-install-row a {
+  color: #aabca8;
+  font-size: 9px;
+  text-decoration: none;
+}
+.engine-install-row a:hover {
+  color: var(--accent);
+}
+.engine-install-note {
+  line-height: 1.5;
+}
+.stockfish-results {
+  padding: 0 12px 10px;
+}
+.stockfish-results:empty {
+  display: none;
+}
+.stockfish-result-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.stockfish-line {
+  display: grid;
+  grid-template-columns: 18px 44px 42px minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid #2b352d;
+  font-size: 10px;
+}
+.stockfish-line.best {
+  color: var(--accent);
+}
+.stockfish-line .engine-pv {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stockfish-line .engine-rank {
+  color: var(--muted);
+  font-size: 8px;
+}
+.stockfish-loading {
+  color: #bbcab5;
+  font-size: 9px;
+  padding: 0 0 10px;
+}

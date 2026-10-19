@@ -45,10 +45,10 @@ def build_preview(output: Path) -> Path:
         '<script src="./app.js" type="module"></script>': inline_script,
         'href="./favicon.svg"': f'href="{data_uri(STATIC / "favicon.svg")}"',
         'href="./docs"': 'href="https://github.com/understandingothers789-pixel/'
-        'EloVision/blob/codex/elovision-v1/docs/BACKEND.md"',
+        'EloVision/blob/main/docs/BACKEND.md"',
         "<main>": '<main><div class="alert" role="note">Standalone interface preview: '
         "the sample game, board navigation, and rating controls work here. "
-        "Run start.bat in the installed app for PGN imports and real Maia analysis. "
+        "Run start.bat in the installed app for PGN imports, real Maia analysis, and Stockfish. "
         "No probabilities are simulated.</div>",
     }
     for original, replacement in replacements.items():

@@ -14,6 +14,8 @@ const state = {
   flipped: false,
   mode: "explore",
   predictions: [],
+  stockfish: null,
+  stockfishAvailable: false,
   selectedMove: null,
   revision: 0,
   timer: null,
@@ -41,6 +43,8 @@ function alert(message = "") {
 async function api(path, data, signal) {
   if (preview) {
     if (path === "health") return { loaded: false, installed: false };
+    if (path === "engine/status") return { available: false, message: "Stockfish analysis requires the installed local app." };
+    if (path.startsWith("engine/")) throw new Error("Stockfish analysis requires the installed local app.");
     if (path === "samples") return preview.samples.map(({ metadata }) => metadata);
     if (path === "position") {
       for (const sample of preview.samples) {
@@ -193,6 +197,7 @@ function capitalize(value) {
 }
 function navigate(ply) {
   if (!state.game) return;
+  clearStockfishResult();
   state.ply = Math.max(0, Math.min(state.game.moves.length, ply));
   state.position = state.game.positions[state.ply];
   renderBoard();
@@ -457,6 +462,9 @@ function renderMoveArrows(predictions) {
   const marker = make("marker", { id: "move-arrowhead", viewBox: "0 0 10 10", refX: "8", refY: "5", markerWidth: "4", markerHeight: "4", orient: "auto-start-reverse" });
   marker.append(make("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "context-stroke" }));
   defs.append(marker);
+  const engineMarker = make("marker", { id: "engine-arrowhead", viewBox: "0 0 10 10", refX: "8", refY: "5", markerWidth: "4", markerHeight: "4", orient: "auto" });
+  engineMarker.append(make("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#fff0a3" }));
+  defs.append(engineMarker);
   svg.append(defs);
   const byElo = [...predictions].sort((a, b) => a.player_elo - b.player_elo);
   for (const prediction of byElo) {
@@ -475,6 +483,21 @@ function renderMoveArrows(predictions) {
       line.append(title);
       svg.append(line, make("circle", { cx: x2, cy: y2, r: ".13", fill: color, stroke: "#142019", "stroke-width": ".035" }));
     }
+  }
+  const engineMove = state.stockfish?.lines?.[0];
+  if (engineMove?.uci) {
+    const point = (square) => {
+      const file = square.charCodeAt(0) - 97;
+      const rank = Number(square[1]);
+      return state.flipped ? [7 - file + .5, rank - .5] : [file + .5, 8 - rank + .5];
+    };
+    const [x1, y1] = point(engineMove.uci.slice(0, 2));
+    const [x2, y2] = point(engineMove.uci.slice(2, 4));
+    const engineLine = make("line", { x1, y1, x2, y2, stroke: "#fff0a3", "stroke-width": ".075", "stroke-dasharray": ".18 .09", "stroke-linecap": "round", "marker-end": "url(#engine-arrowhead)" });
+    const title = make("title");
+    title.textContent = `Stockfish 19 best move: ${engineMove.san} (${engineMove.score} for White)`;
+    engineLine.append(title);
+    svg.append(engineLine, make("circle", { cx: x2, cy: y2, r: ".19", fill: "none", stroke: "#fff0a3", "stroke-width": ".055" }));
   }
 }
 function createTable(headers, spectrum = false) {
@@ -744,6 +767,101 @@ document
     tab.addEventListener("click", () => setMode(tab.dataset.mode)),
   );
 $("move-limit").addEventListener("change", renderPredictions);
+function clearStockfishResult() {
+  state.stockfish = null;
+  $("stockfish-results").replaceChildren();
+}
+function engineMessage(message, className = "") {
+  const line = node("div", `stockfish-loading${className ? ` ${className}` : ""}`, message);
+  $("stockfish-results").replaceChildren(line);
+}
+async function refreshStockfishStatus() {
+  try {
+    const result = await api("engine/status");
+    state.stockfishAvailable = Boolean(result.available);
+    $("stockfish-status").textContent = result.available
+      ? `${result.name} · ready`
+      : result.message || "Not installed · choose the Stockfish 19 executable";
+    $("stockfish-analyze").disabled = !result.available;
+    if (result.message) $("stockfish-status").title = result.message;
+  } catch (error) {
+    state.stockfishAvailable = false;
+    $("stockfish-status").textContent = "Stockfish is unavailable";
+    $("stockfish-status").title = error.message;
+  }
+}
+function renderStockfish(result) {
+  const container = $("stockfish-results");
+  container.replaceChildren();
+  if (!result.lines.length) {
+    container.append(node("div", "stockfish-loading", "This position has no legal moves."));
+    return;
+  }
+  const summary = node("div", "stockfish-result-summary");
+  summary.append(node("span", "", `${result.engine} · depth ${result.depth}`), node("span", "", "Eval from White’s perspective"));
+  container.append(summary);
+  for (const line of result.lines) {
+    const row = node("div", `stockfish-line${line.rank === 1 ? " best" : ""}`);
+    row.append(node("span", "engine-rank", String(line.rank).padStart(2, "0")), node("strong", "", line.san || "—"), node("strong", "", line.score));
+    row.append(node("span", "engine-pv", line.pv.join(" ")));
+    row.title = `${line.score} · ${line.pv.join(" ")}`;
+    container.append(row);
+  }
+}
+async function analyzeStockfish() {
+  const button = $("stockfish-analyze");
+  const requestPosition = JSON.stringify(payload());
+  const requestDepth = Number($("stockfish-depth").value);
+  const requestPayload = { ...payload(), depth: requestDepth, multipv: 5 };
+  button.disabled = true;
+  engineMessage("Stockfish is searching this position…");
+  try {
+    const response = await fetch(localUrl("api/v1/engine/analyze"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestPayload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
+    if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth) return;
+    state.stockfish = data;
+    renderStockfish(data);
+    if (state.predictions.length) renderMoveArrows(state.predictions);
+  } catch (error) {
+    if (JSON.stringify(payload()) === requestPosition) engineMessage(error.message);
+  } finally {
+    button.disabled = !state.stockfishAvailable;
+  }
+}
+async function installStockfish(file) {
+  if (!file) return;
+  if (file.size > 100 * 1024 * 1024) {
+    engineMessage("Choose a Stockfish executable no larger than 100 MB.");
+    return;
+  }
+  $("stockfish-choose").disabled = true;
+  $("stockfish-status").textContent = "Checking Stockfish 19…";
+  try {
+    const response = await fetch(localUrl("api/v1/engine/install"), {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Engine-Filename": encodeURIComponent(file.name) },
+      body: file,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error?.message || `Engine install failed (${response.status}).`);
+    state.stockfishAvailable = true;
+    $("stockfish-status").textContent = `${data.name} · ready`;
+    $("stockfish-analyze").disabled = false;
+    engineMessage("Stockfish 19 is ready. Analyze the current position whenever you like.");
+  } catch (error) {
+    state.stockfishAvailable = false;
+    $("stockfish-status").textContent = "Engine setup needs attention";
+    engineMessage(error.message);
+  } finally {
+    $("stockfish-choose").disabled = false;
+    $("stockfish-file").value = "";
+  }
+}
 function generatedRatings(count, requestedSpacing) {
   if (count === 1) {
     $("spacing-note").textContent = "Single rating centered on 1800; edit it below.";
@@ -830,6 +948,9 @@ $("chart-move").addEventListener("change", () => {
   renderChart();
 });
 $("retry").addEventListener("click", () => scheduleAnalysis());
+$("stockfish-analyze").addEventListener("click", analyzeStockfish);
+$("stockfish-choose").addEventListener("click", () => $("stockfish-file").click());
+$("stockfish-file").addEventListener("change", (event) => installStockfish(event.target.files[0]));
 $("flip").addEventListener("click", () => {
   state.flipped = !state.flipped;
   renderBoard();
@@ -930,6 +1051,7 @@ $("fen-form").addEventListener("submit", async (event) => {
     const position = await api("position", {
       fen: $("fen-input").value.trim(),
     });
+    clearStockfishResult();
     state.position = position;
     state.game = null;
     state.ply = 0;
@@ -953,6 +1075,9 @@ $("export-json").addEventListener("click", () => exportResults("json"));
 $("export-csv").addEventListener("click", () => exportResults("csv"));
 if (preview) {
   $("import").disabled = true;
+  $("stockfish-analyze").disabled = true;
+  $("stockfish-choose").disabled = true;
+  $("stockfish-choose").title = "Engine installation requires the locally running Python app.";
   $("import").title =
     "PGN file imports require the locally running Python app.";
   $("fen-open").disabled = true;
@@ -964,6 +1089,7 @@ if (preview) {
     navigate(0);
   });
 }
+refreshStockfishStatus();
 loadSamples().catch((error) => {
   $("sample-game-select").replaceChildren(node("option", "", "Sample library unavailable"));
   alert(error.message);

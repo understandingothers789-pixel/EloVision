@@ -5,7 +5,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -19,6 +19,7 @@ from .config import RATINGS
 from .errors import VisionError
 from .export import export_csv, export_json
 from .inference import InferenceService, PredictionRequest
+from .stockfish import MAX_ENGINE_BYTES, StockfishService
 
 
 class PositionInput(BaseModel):
@@ -64,15 +65,27 @@ class PgnInput(BaseModel):
     pgn: str = Field(max_length=2_000_000)
 
 
-def create_app(service: InferenceService | None = None):
+class StockfishInput(PositionInput):
+    depth: int = Field(default=16, ge=10, le=22)
+    multipv: int = Field(default=5, ge=1, le=5)
+
+
+def create_app(
+    service: InferenceService | None = None,
+    stockfish_service: StockfishService | None = None,
+):
     engine = service or InferenceService()
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="maia")
+    stockfish = stockfish_service or StockfishService()
+    stockfish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stockfish")
     pending = asyncio.Semaphore(4)
+    stockfish_pending = asyncio.Semaphore(1)
 
     @asynccontextmanager
     async def lifespan(app):
         yield
         executor.shutdown(wait=True, cancel_futures=True)
+        stockfish_executor.shutdown(wait=True, cancel_futures=True)
         engine.close()
 
     app = FastAPI(title="ELO Vision local API", version="1.0", lifespan=lifespan)
@@ -80,6 +93,7 @@ def create_app(service: InferenceService | None = None):
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
     app.state.engine = engine
+    app.state.stockfish = stockfish
 
     @app.middleware("http")
     async def local_requests(request: Request, call_next):
@@ -95,9 +109,15 @@ def create_app(service: InferenceService | None = None):
                 403,
             )
         try:
-            if int(request.headers.get("content-length", "0")) > 2_500_000:
+            limit = MAX_ENGINE_BYTES if request.url.path == "/api/v1/engine/install" else 2_500_000
+            if int(request.headers.get("content-length", "0")) > limit:
                 return JSONResponse(
-                    {"error": {"code": "request_too_large", "message": "Request exceeds 2.5 MB."}},
+                    {
+                        "error": {
+                            "code": "request_too_large",
+                            "message": "Request exceeds the upload limit.",
+                        }
+                    },
                     413,
                 )
         except ValueError:
@@ -143,6 +163,44 @@ def create_app(service: InferenceService | None = None):
                     "retry; no probabilities were substituted.",
                     500,
                 ) from exc
+
+    async def stockfish_work(fn, *args):
+        if stockfish_pending.locked():
+            raise VisionError(
+                "stockfish_busy", "Stockfish is busy. Wait for the current search to finish.", 429
+            )
+        async with stockfish_pending:
+            try:
+                return await asyncio.get_running_loop().run_in_executor(
+                    stockfish_executor, fn, *args
+                )
+            except VisionError:
+                raise
+            except Exception as exc:
+                logging.exception("Stockfish request failed")
+                raise VisionError(
+                    "stockfish_failed", "Stockfish could not complete that request.", 500
+                ) from exc
+
+    @app.get("/api/v1/engine/status")
+    async def stockfish_status():
+        return await stockfish_work(stockfish.status)
+
+    @app.post("/api/v1/engine/install")
+    async def stockfish_install(request: Request):
+        filename = (
+            unquote(request.headers.get("x-engine-filename", "")).replace("\\", "/").split("/")[-1]
+        )
+        if not filename:
+            raise VisionError("stockfish_filename", "The engine filename is missing.", 400)
+        content = await request.body()
+        if len(content) > MAX_ENGINE_BYTES:
+            raise VisionError("stockfish_too_large", "Engine files must be 100 MB or smaller.", 413)
+        return await stockfish_work(stockfish.install, filename, content)
+
+    @app.post("/api/v1/engine/analyze")
+    async def stockfish_analyze(data: StockfishInput):
+        return await stockfish_work(stockfish.analyze, data.prediction(), data.depth, data.multipv)
 
     @app.get("/api/v1/samples")
     def samples():
