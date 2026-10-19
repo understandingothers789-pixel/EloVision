@@ -1,9 +1,19 @@
 # Validation record
 
-Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0+cpu, pinned Maia source `1e13597c42d4858b7cfd7cfdae01e297263364b2`, headless system Chromium. No Windows machine or AMD GPU was available.
+Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0+cpu, pinned Maia source `1e13597c42d4858b7cfd7cfdae01e297263364b2`, headless system Chromium. No Windows machine, AMD GPU, or NVIDIA GPU was available.
 
 ## Completed checks
 
+- NVIDIA Windows environment addition: **45 passed** using
+  `pytest -q tests/test_windows_runtime.py tests/test_device.py`. Coverage includes
+  the existing AMD path, CUDA wheel selection for older cards and Blackwell,
+  NVIDIA-only and mixed-vendor startup, failed/partial installs, failed inference
+  and native crashes, explicit CPU/GPU overrides, rejecting CPU output from a GPU
+  probe, probability-comparison validation, and reuse of the loaded model. These
+  use mocked Windows/GPU subprocesses and model results; they are not actual CUDA
+  inference. The official CUDA 12.6/12.8 indexes list Torch 2.8.0 Windows Python
+  3.12 wheels. CLI help, Ruff checks on changed Python files, and
+  `git diff --check` passed. No Python or Torch installation was changed here.
 - Latest Windows CPU/AMD environment changes: **80 passed, 8 skipped** with
   `pytest -q -m 'not browser'`; 20 browser tests were deselected. Seven skips need
   real model weights/GPU hardware; one standalone-preview check needs Chromium
@@ -32,6 +42,11 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
   execution, AMD package download/installation and RX 9070 XT inference remain
   untested in the cloud. See [Windows GPU setup](WINDOWS_GPU.md); the installer
   requires a local real-model CPU/GPU comparison before enabling the AMD environment.
+- **Windows NVIDIA:** isolated CUDA installation, real-inference startup checks,
+  device selection, and CPU fallback are implemented and covered by mocked tests.
+  Actual Windows CUDA package installation, GPU inference, performance, and VRAM
+  use remain unverified here. The local installer must pass real Maia CPU/CUDA
+  comparisons before `.venv-nvidia` is eligible for automatic selection.
 - **Training rating coverage:** the official source and retrieved model card do not specify rating-specific coverage; the paper has not been retrieved. The card states AGPLv3 and Lichess training data from January 2023 through July 2025. The app labels rating uncertainty, and no weights are redistributed.
 
 ## Finish verification after access is available

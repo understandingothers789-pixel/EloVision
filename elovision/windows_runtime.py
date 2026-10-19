@@ -1,4 +1,4 @@
-"""Windows CPU/AMD environments. Bootstrap code uses only the standard library.
+"""Windows CPU/AMD/NVIDIA environments. Bootstrap uses only the standard library.
 
 Package source: ROCm/TheRock RELEASES.md at
 6345e7b6d5944599874285ee0d1157b3f7a58fa1 (stable aggregate index, device extras).
@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache"
 AMD_INDEX = "https://stable.repo.amd.com/rocm/whl-next/"
 CPU_INDEX = "https://download.pytorch.org/whl/cpu"
+NVIDIA_INDEX = "https://download.pytorch.org/whl/"
 GPU_FAILURE = 78
 # Conservative product lookup, not a claim that every driver supports these cards.
 # Unknown products remain on CPU rather than guessing an architecture.
@@ -74,6 +75,31 @@ def amd_target(names):
     return None
 
 
+def nvidia_adapter(names):
+    return next((name for name in names if re.search(r"\bNVIDIA\b", name, re.I)), None)
+
+
+def nvidia_cuda_build():
+    """Use CUDA 12.8 for Blackwell, 12.6 for older cards when discoverable.
+
+    CUDA 12.6's Torch 2.8 wheels retain older GPU architectures. If nvidia-smi
+    is unavailable, the 12.8 build still has to pass real Maia inference.
+    """
+    try:
+        output = run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            capture=True, timeout=20,
+        ).stdout
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if lines and all(re.fullmatch(r"\d+\.\d+", line) for line in lines) and max(
+            float(line) for line in lines
+        ) < 10:
+            return "cu126"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "cu128"
+
+
 def write_json(path, report):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,6 +149,20 @@ def rocm_device(torch, target=None):
     return f"cuda:{max(candidates)[1]}"
 
 
+def nvidia_device(torch):
+    if torch.version.hip or not torch.version.cuda or not torch.cuda.is_available():
+        raise RuntimeError("This PyTorch environment cannot access an NVIDIA CUDA GPU.")
+    candidates = []
+    for index in range(torch.cuda.device_count()):
+        properties = torch.cuda.get_device_properties(index)
+        # Older GeForce/Tesla names can omit "NVIDIA"; the CUDA build identifies
+        # the backend, so do not reject those names.
+        candidates.append((properties.total_memory, index))
+    if not candidates:
+        raise RuntimeError("CUDA did not expose an NVIDIA GPU.")
+    return f"cuda:{max(candidates)[1]}"
+
+
 def real_probe(device, *, target=None, full=False, requested="auto"):
     """Real model, legal-move distributions, no cache/test logits or silent fallback."""
     import chess
@@ -131,8 +171,12 @@ def real_probe(device, *, target=None, full=False, requested="auto"):
     from .config import ModelConfig
     from .inference import InferenceService, PredictionRequest
 
-    selected = rocm_device(torch, target) if device == "amd" else "cpu"
-    if device == "amd" and requested.startswith("cuda"):
+    gpu = device in {"amd", "nvidia"}
+    selected = (
+        rocm_device(torch, target) if device == "amd"
+        else nvidia_device(torch) if device == "nvidia" else "cpu"
+    )
+    if gpu and requested.startswith("cuda"):
         selected = f"cuda:{torch.cuda.current_device()}" if requested == "cuda" else requested
     config = replace(ModelConfig(), device=selected)
     service = InferenceService(config)
@@ -145,7 +189,7 @@ def real_probe(device, *, target=None, full=False, requested="auto"):
     positions = []
     started = time.perf_counter()
     try:
-        if device == "amd":
+        if gpu:
             torch.cuda.reset_peak_memory_stats(selected)
         for board in boards:
             request = PredictionRequest(
@@ -154,24 +198,25 @@ def real_probe(device, *, target=None, full=False, requested="auto"):
             )
             pairs = [(600, 600), (1800, 1800), (2600, 2600)] if full else [(1800, 1800)]
             for result in service.predict_many(request, pairs):
-                if device == "amd" and result["model"]["device"] != selected:
-                    raise RuntimeError("Maia did not actually perform inference on the AMD GPU.")
+                if gpu and result["model"]["device"] != selected:
+                    raise RuntimeError(f"Maia did not actually infer on the {device.upper()} GPU.")
                 positions.append({
                     "fen": request.fen,
                     "ratings": [result["player_elo"], result["opponent_elo"]],
                     "probabilities": {m["uci"]: m["probability"] for m in result["moves"]},
                 })
-        if device == "amd":
+        if gpu:
             torch.cuda.synchronize(selected)
         metadata = service.policy.metadata
         report = {
             "python": sys.version.split()[0], "executable": sys.executable,
             "torch": str(torch.__version__), "rocm": torch.version.hip,
+            "cuda": torch.version.cuda,
             "device": metadata["device"], "device_label": metadata["device_label"],
             "weights_sha256": metadata["weights_sha256"],
             "elapsed_seconds_including_load": time.perf_counter() - started,
             "peak_allocated_vram_mb": (
-                torch.cuda.max_memory_allocated(selected) / 1024**2 if device == "amd" else 0
+                torch.cuda.max_memory_allocated(selected) / 1024**2 if gpu else 0
             ),
             "positions": positions,
         }
@@ -197,7 +242,6 @@ def probe(device, output, reference=None, target=None):
 
 def install():
     cpu = python_for(".venv")
-    amd = python_for(".venv-amd")
     CACHE.mkdir(exist_ok=True)
     print("Installing CPU Torch 2.8.0 in .venv (global Python is unchanged).", flush=True)
     run([cpu, "-m", "pip", "install", "--index-url", CPU_INDEX, "torch==2.8.0+cpu"])
@@ -206,52 +250,66 @@ def install():
     try:
         names = windows_adapters()
         print("Windows graphics: " + ", ".join(names), flush=True)
-        detected = amd_target(names)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         print(f"Graphics discovery failed: {exc}\nCPU setup is complete.", flush=True)
         return 0
-    if not detected:
-        print("No mapped AMD Radeon GPU detected. CPU setup is complete.")
+    nvidia = nvidia_adapter(names)
+    detected = amd_target(names)
+    if not nvidia and not detected:
+        print("No NVIDIA or mapped AMD Radeon GPU detected. CPU setup is complete.")
         return 0
-    name, target = detected
+    if nvidia:
+        vendor, label, name = "nvidia", "NVIDIA", nvidia
+        target = None
+        build = nvidia_cuda_build()
+        index = NVIDIA_INDEX + build
+        package = f"torch==2.8.0+{build}"
+        prerequisite = "A compatible NVIDIA display driver is required; no CUDA Toolkit is needed."
+    else:
+        vendor, label = "amd", "AMD"
+        name, target = detected
+        index, package = AMD_INDEX, f"torch[device-{target}]>=2.8,<3"
+        prerequisite = "Your driver must support AMD's runtime."
+    gpu = python_for(f".venv-{vendor}")
     print(
-        f"{name} detected ({target}). Installing AMD stable ROCm/PyTorch in .venv-amd.\n"
-        "This can download several GB and use a newer Torch 2.x than the CPU version.\n"
-        "Your driver must support AMD's runtime. Failure keeps the CPU app usable.",
+        f"{name} detected. Installing {package} in .venv-{vendor}.\n"
+        "This can download several GB. AMD may use a newer Torch 2.x than CPU.\n"
+        f"{prerequisite} Failure keeps the CPU app usable.",
         flush=True,
     )
     # Revoke the old receipt before any mutations, including an interrupted reinstall.
-    (CACHE / "amd-install.json").unlink(missing_ok=True)
-    (CACHE / "amd-maia-check.json").unlink(missing_ok=True)
+    (CACHE / f"{vendor}-install.json").unlink(missing_ok=True)
+    (CACHE / f"{vendor}-maia-check.json").unlink(missing_ok=True)
     reference = CACHE / "cpu-maia-reference.json"
     # A failed mandatory CPU baseline must not be described as successful CPU setup.
     run([cpu, "-m", "elovision.windows_runtime", "probe", "--device", "cpu",
          "--output", reference], timeout=240)
     try:
-        if not amd.exists():
-            run([cpu, "-m", "venv", ROOT / ".venv-amd"])
-        run([amd, "-m", "pip", "install", "--upgrade", "pip"])
-        run([amd, "-m", "pip", "install", "--index-url", AMD_INDEX,
-             "--only-binary=torch", f"torch[device-{target}]>=2.8,<3"])
-        # Exact constraint prevents editable installation from replacing AMD Torch with PyPI Torch.
-        version = run([amd, "-c", "import torch; print(torch.__version__)"], capture=True).stdout
-        constraint = CACHE / "amd-torch-constraint.txt"
+        if not gpu.exists():
+            run([cpu, "-m", "venv", ROOT / f".venv-{vendor}"])
+        run([gpu, "-m", "pip", "install", "--upgrade", "pip"])
+        run([gpu, "-m", "pip", "install", "--index-url", index,
+             "--only-binary=torch", package])
+        # Exact constraint prevents editable installation from replacing GPU Torch with PyPI Torch.
+        version = run([gpu, "-c", "import torch; print(torch.__version__)"], capture=True).stdout
+        constraint = CACHE / f"{vendor}-torch-constraint.txt"
         constraint.write_text(f"torch=={version.strip()}\n", encoding="utf-8")
-        run([amd, "-m", "pip", "install", "-c", constraint, "-e", "."])
-        run([amd, "-m", "pip", "check"])
-        run([amd, "-m", "elovision.windows_runtime", "probe", "--device", "amd",
-             "--target", target, "--output", CACHE / "amd-maia-check.json",
+        run([gpu, "-m", "pip", "install", "-c", constraint, "-e", "."])
+        run([gpu, "-m", "pip", "check"])
+        target_args = ["--target", target] if target else []
+        run([gpu, "-m", "elovision.windows_runtime", "probe", "--device", vendor,
+             *target_args, "--output", CACHE / f"{vendor}-maia-check.json",
              "--reference", reference], timeout=300)
-        packages = run([amd, "-m", "pip", "freeze"], capture=True).stdout
-        (CACHE / "amd-packages.txt").write_text(packages, encoding="utf-8")
-        write_json(CACHE / "amd-install.json", {"target": target, "name": name})
-        (CACHE / "amd-setup-error.txt").unlink(missing_ok=True)
-        print("AMD setup and real Maia CPU/GPU comparison passed. Run start.bat.")
+        packages = run([gpu, "-m", "pip", "freeze"], capture=True).stdout
+        (CACHE / f"{vendor}-packages.txt").write_text(packages, encoding="utf-8")
+        write_json(CACHE / f"{vendor}-install.json", {"target": target, "name": name})
+        (CACHE / f"{vendor}-setup-error.txt").unlink(missing_ok=True)
+        print(f"{label} setup and real Maia CPU/GPU comparison passed. Run start.bat.")
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        (CACHE / "amd-install.json").unlink(missing_ok=True)
-        (CACHE / "amd-setup-error.txt").write_text(str(exc), encoding="utf-8")
+        (CACHE / f"{vendor}-install.json").unlink(missing_ok=True)
+        (CACHE / f"{vendor}-setup-error.txt").write_text(str(exc), encoding="utf-8")
         print(
-            f"\nAMD setup could not be verified: {exc}\n"
+            f"\n{label} setup could not be verified: {exc}\n"
             "CPU setup is complete. start.bat will use it.\n"
             "Keep the error above; see docs/WINDOWS_GPU.md or run check-device.bat.",
             flush=True,
@@ -261,31 +319,41 @@ def install():
 
 def start():
     requested = os.environ.get("ELOVISION_DEVICE", "auto").strip().lower()
-    amd = python_for(".venv-amd")
-    receipt = CACHE / "amd-install.json"
-    if requested != "cpu" and amd.exists() and receipt.exists():
+    # Prefer NVIDIA on mixed-vendor PCs; keep verified AMD as another fallback.
+    for vendor in ("nvidia", "amd"):
+        gpu = python_for(f".venv-{vendor}")
+        receipt = CACHE / f"{vendor}-install.json"
+        if requested == "cpu" or not gpu.exists() or not receipt.exists():
+            continue
+        label = vendor.upper()
         try:
-            detected = amd_target(windows_adapters())
+            names = windows_adapters()
             installed = json.loads(receipt.read_text(encoding="utf-8"))
-            if not detected or detected[1] != installed["target"]:
-                raise ValueError("The installed AMD environment does not match this PC's GPU.")
+            target_args = []
+            if vendor == "amd":
+                detected = amd_target(names)
+                if not detected or detected[1] != installed["target"]:
+                    raise ValueError("The installed AMD environment does not match this PC's GPU.")
+                target_args = ["--target", detected[1]]
+            elif not nvidia_adapter(names):
+                raise ValueError("This PC no longer has an NVIDIA adapter.")
             # Unique marker distinguishes a native crash before inference from a stopped server.
             with tempfile.TemporaryDirectory(prefix="elovision-start-") as directory:
                 marker = Path(directory) / "ready.json"
                 result = subprocess.run(
-                    [str(amd), "-m", "elovision.windows_runtime", "serve-amd",
-                     "--target", detected[1], "--output", str(marker),
+                    [str(gpu), "-m", "elovision.windows_runtime", f"serve-{vendor}",
+                     *target_args, "--output", str(marker),
                      "--gpu-device", requested], cwd=ROOT,
                 )
                 if marker.exists() and result.returncode == 0:
                     return result.returncode
                 if requested != "auto":
                     return result.returncode or GPU_FAILURE
-                print("AMD Maia startup failed; switching to CPU.", flush=True)
+                print(f"{label} Maia startup failed; trying the next environment.", flush=True)
         except KeyboardInterrupt:
             return 0
         except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
-            print(f"AMD environment unavailable: {exc}", flush=True)
+            print(f"{label} environment unavailable: {exc}", flush=True)
             if requested != "auto":
                 return GPU_FAILURE
     environment = os.environ.copy()
@@ -299,10 +367,14 @@ def start():
 
 
 def serve_amd(target, output, requested="auto"):
+    return serve_gpu("amd", target, output, requested)
+
+
+def serve_gpu(device, target, output, requested="auto"):
     try:
-        service, report = real_probe("amd", target=target, requested=requested)
+        service, report = real_probe(device, target=target, requested=requested)
     except Exception as exc:
-        print(f"AMD real Maia inference failed: {exc}", flush=True)
+        print(f"{device.upper()} real Maia inference failed: {exc}", flush=True)
         return GPU_FAILURE
     # Reuse the already loaded model and allow existing runtime CPU recovery for later failures.
     service.config = replace(service.config, device=requested)
@@ -329,7 +401,7 @@ def diagnose():
         "print('GPUs:', [torch.cuda.get_device_name(i) "
         "for i in range(torch.cuda.device_count())])"
     )
-    for name in (".venv", ".venv-amd"):
+    for name in (".venv", ".venv-amd", ".venv-nvidia"):
         print(f"\n{name}:", flush=True)
         python = python_for(name)
         if python.exists():
@@ -345,8 +417,10 @@ def diagnose():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["install", "start", "diagnose", "probe", "serve-amd"])
-    parser.add_argument("--device", choices=["cpu", "amd"], default="cpu")
+    parser.add_argument("command", choices=[
+        "install", "start", "diagnose", "probe", "serve-amd", "serve-nvidia",
+    ])
+    parser.add_argument("--device", choices=["cpu", "amd", "nvidia"], default="cpu")
     parser.add_argument("--target")
     parser.add_argument("--gpu-device", default="auto")
     parser.add_argument("--output", type=Path)
@@ -354,13 +428,15 @@ def main():
     args = parser.parse_args()
     if args.command in {"install", "start", "diagnose"} and platform.system() != "Windows":
         parser.error("Use these commands on the Windows PC running ELO Vision.")
-    if args.command in {"probe", "serve-amd"} and not args.output:
+    if args.command in {"probe", "serve-amd", "serve-nvidia"} and not args.output:
         parser.error("--output is required for a probe or startup check")
     if args.command == "probe":
         probe(args.device, args.output, args.reference, args.target)
         return 0
     if args.command == "serve-amd":
         return serve_amd(args.target, args.output, args.gpu_device)
+    if args.command == "serve-nvidia":
+        return serve_gpu("nvidia", None, args.output, args.gpu_device)
     if args.command == "diagnose":
         diagnose()
         return 0

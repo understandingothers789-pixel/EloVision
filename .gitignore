@@ -1,5 +1,6 @@
 .venv/
 .venv-amd/
+.venv-nvidia/
 .models/
 .engines/
 .cache/

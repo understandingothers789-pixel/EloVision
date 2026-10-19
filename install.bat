@@ -11,7 +11,7 @@ if errorlevel 1 goto failed
 .venv\Scripts\python.exe -m elovision.windows_runtime install
 if errorlevel 1 goto failed
 echo.
-echo Setup finished. See the CPU/AMD result above. Run start.bat to launch ELO Vision.
+echo Setup finished. See the CPU/AMD/NVIDIA result above. Run start.bat to launch ELO Vision.
 pause
 exit /b 0
 :missing_python
