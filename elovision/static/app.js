@@ -27,6 +27,7 @@ const state = {
   stockfishAvailable: false,
   wholeGameController: null,
   maiaWarmupToken: 0,
+  stockfishInFlight: null,
   hoverMove: null,
   hiddenChartMoves: new Set(),
   selectedMove: null,
@@ -1598,6 +1599,10 @@ async function analyzeWholeGame() {
   let maiaCompleted = 0;
   let maiaError = "";
   try {
+    if (state.stockfishInFlight) {
+      $("whole-game-status").textContent = "Waiting for the current Stockfish search to finish…";
+      await state.stockfishInFlight.catch(() => {});
+    }
     for (let ply = 0; ply < total; ply += 1) {
       if (controller.signal.aborted) break;
       const positionPayload = {
@@ -1628,10 +1633,12 @@ async function analyzeWholeGame() {
             rememberStockfishResult(key, data);
             return data;
           })();
+      if (!cachedEngine) state.stockfishInFlight = engineTask;
       const maiaTask = maiaError
         ? Promise.resolve(null)
         : api("analyze", maiaRequestForPosition(positionPayload), controller.signal);
       const [engineResult, maiaResult] = await Promise.allSettled([engineTask, maiaTask]);
+      if (state.stockfishInFlight === engineTask) state.stockfishInFlight = null;
       if (engineResult.status === "rejected") throw engineResult.reason;
       if (maiaResult.status === "fulfilled" && maiaResult.value) {
         maiaCompleted += 1;
@@ -1655,6 +1662,12 @@ async function analyzeWholeGame() {
   }
 }
 async function analyzeStockfish(force = false) {
+  if (state.wholeGameController) return;
+  if (state.stockfishInFlight) {
+    await state.stockfishInFlight.catch(() => {});
+    if (state.wholeGameController) return;
+    return analyzeStockfish(force);
+  }
   const hashGb = Number($("stockfish-hash").value);
   const threads = Number($("stockfish-threads").value);
   if (!Number.isInteger(hashGb) || hashGb < 1 || hashGb > 64) {
@@ -1689,14 +1702,18 @@ async function analyzeStockfish(force = false) {
   const requestPayload = { ...payload(), depth: requestDepth, multipv: requestMultiPv, hash_mb: requestHashMb, threads: requestThreads };
   button.disabled = true;
   engineMessage("Stockfish is searching this position…");
-  try {
-    const response = await fetch(localUrl("api/v1/engine/analyze"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestPayload),
-    });
+  const request = fetch(localUrl("api/v1/engine/analyze"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestPayload),
+  }).then(async (response) => {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${data.error?.code ? `${data.error.code}: ` : ""}${data.error?.message || `Engine request failed (${response.status}).`}`);
+    return data;
+  });
+  state.stockfishInFlight = request;
+  try {
+    const data = await request;
     if (JSON.stringify(payload()) !== requestPosition || Number($("stockfish-depth").value) !== requestDepth || Number($("stockfish-lines-count").value) !== requestMultiPv || Number($("stockfish-hash").value) * 1024 !== requestHashMb || Number($("stockfish-threads").value) !== requestThreads) return;
     showStockfishResult(data, key);
   } catch (error) {
@@ -1705,6 +1722,7 @@ async function analyzeStockfish(force = false) {
       stockfishError(error.message);
     }
   } finally {
+    if (state.stockfishInFlight === request) state.stockfishInFlight = null;
     button.disabled = !state.stockfishAvailable;
   }
 }

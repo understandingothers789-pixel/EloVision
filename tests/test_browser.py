@@ -438,6 +438,91 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert not errors
 
 
+def test_whole_game_waits_for_the_current_stockfish_search(page):
+    from playwright.sync_api import expect
+
+    page.add_init_script(
+        """window.__stockfishActive = 0;
+        window.__stockfishMaxActive = 0;
+        window.__releaseFirstStockfish = null;
+        const firstSearchGate = new Promise(resolve => {
+          window.__releaseFirstStockfish = resolve;
+        });
+        const originalFetch = window.fetch.bind(window);
+        let firstSearch = true;
+        window.fetch = function (input, init) {
+          if (!String(input).includes('/api/v1/engine/analyze'))
+            return originalFetch(input, init);
+          window.__stockfishActive += 1;
+          window.__stockfishMaxActive = Math.max(
+            window.__stockfishMaxActive, window.__stockfishActive
+          );
+          const gate = firstSearch ? firstSearchGate : Promise.resolve();
+          firstSearch = false;
+          return gate.then(() => originalFetch(input, init)).finally(() => {
+            window.__stockfishActive -= 1;
+          });
+        };"""
+    )
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={"available": True, "name": "Stockfish 19 queue fixture", "channel": "official19"}
+        ),
+    )
+
+    def analyze(route):
+        data = json.loads(route.request.post_data)
+        board = chess.Board(data["fen"])
+        moves = list(board.legal_moves)
+        route.fulfill(
+            json={
+                "predictions": [
+                    {
+                        "player_elo": pair["player_elo"],
+                        "opponent_elo": pair["opponent_elo"],
+                        "moves": [
+                            {
+                                "uci": move.uci(),
+                                "san": board.san(move),
+                                "probability": 1 / len(moves),
+                                "rank": rank,
+                            }
+                            for rank, move in enumerate(moves, 1)
+                        ],
+                    }
+                    for pair in data.get("matchups", [{"player_elo": 1800, "opponent_elo": 1800}])
+                ]
+            }
+        )
+
+    page.route("**/api/v1/analyze", analyze)
+    page.route(
+        "**/api/v1/engine/analyze",
+        lambda route: route.fulfill(
+            json={
+                "engine": "Stockfish 19 queue fixture",
+                "channel": "official19",
+                "depth": 20,
+                "lines": [],
+            }
+        ),
+    )
+    page.goto(BASE_URL)
+    page.wait_for_function("window.__stockfishActive === 1")
+    page.locator("#sample").click()
+    expect(page.locator("#whole-game-analyze")).to_be_enabled()
+    page.locator("#whole-game-analyze").click()
+    expect(page.locator("#whole-game-status")).to_contain_text(
+        "Waiting for the current Stockfish search"
+    )
+    page.evaluate("window.__releaseFirstStockfish()")
+    page.locator("#whole-game-status").filter(
+        has_text="Complete · 34 positions analyzed"
+    ).wait_for()
+    assert page.evaluate("window.__stockfishMaxActive") == 1
+
+
 def test_browser_engine_settings_persist_and_restore_defaults(page):
     page.goto(BASE_URL)
     page.locator("#settings-tab-engine").click()
