@@ -2140,7 +2140,7 @@ body.analysis-theme .square.dark.last { background: #aeb34d; }
 .workspace.analysis-layout .rating-chart-panel > header { margin: 0; padding: 12px 12px 0; }
 .workspace.analysis-layout .rating-chart-panel h3 { font-size: 14px; font-weight: 500; }
 .chart-help { color: #95858e; font-size: 12px; }
-#rating-comparison-chart { position: relative; min-height: 245px; padding: 0 5px; }
+#rating-comparison-chart { position: relative; min-height: 205px; padding: 0 5px; }
 #rating-comparison-chart svg { display: block; width: 100%; height: auto; min-height: 0; overflow: visible; }
 .rating-chart-legend-controls { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-height: 25px; padding: 5px 22px 0; }
 .chart-legend-button { position: relative; border: 0; padding: 1px 0; background: none; color: var(--series-color); font-size: 11px; }
@@ -2161,8 +2161,8 @@ body.analysis-theme .square.dark.last { background: #aeb34d; }
 .chart-tooltip-row { display: flex; justify-content: space-between; gap: 24px; padding: 2px 0; }
 .chart-tooltip-row strong { font-family: 'Consolas', monospace; font-weight: 400; }
 .chart-context { padding: 0 13px 11px; margin: 0; color: #92838e; font-size: 9px; line-height: 1.5; }
-.chart-empty { display: grid; place-content: center; text-align: center; min-height: 245px; padding: 25px; color: #968993; font-size: 12px; }
-#rating-comparison-chart > .stockfish-loading { display: grid; place-content: center; min-height: 245px; padding: 20px; text-align: center; }
+.chart-empty { display: grid; place-content: center; text-align: center; min-height: 205px; padding: 25px; color: #968993; font-size: 12px; }
+#rating-comparison-chart > .stockfish-loading { display: grid; place-content: center; min-height: 205px; padding: 20px; text-align: center; }
 .analysis-options { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 5px; background: #252025; overflow: hidden; }
 .settings-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); background: #211d21; }
 .settings-tab { border: 0; border-right: 1px solid #3a3038; padding: 9px 14px; background: transparent; color: #a99aa4; font-size: 11px; cursor: pointer; }

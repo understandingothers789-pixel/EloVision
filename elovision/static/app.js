@@ -557,16 +557,13 @@ function scheduleAnalysis(delay = 0, autoStockfishForNewMove = false) {
   renderGauges();
   renderMoveArrows();
   if (state.mode === "stockfish") {
+    // The SF Only toggle changes the upper analysis card; keep Maia's rating
+    // comparison populated in the graph below it.
+    loadRatingComparisonChart(revision);
     $("loading").hidden = true;
     $("analysis-indicator").textContent = state.stockfishAvailable ? "STOCKFISH" : "ENGINE NEEDED";
     if (state.stockfishAvailable && autoStockfishForNewMove && $("auto-stockfish").checked) state.timer = setTimeout(() => {
-      const controller = new AbortController();
-      state.controller = controller;
-      const maiaTask = analyzeMaiaInBackground(payload(), controller.signal);
       analyzeStockfish();
-      maiaTask.then(() => {
-        if (revision === state.revision) loadRatingComparisonChart(revision);
-      });
     }, delay);
     else if (!state.stockfishAvailable) engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
     else if (!state.stockfish) engineMessage("This position has not been analyzed yet. Click Analyze, or enable Auto-analyze new moves.");
@@ -1232,7 +1229,7 @@ function renderRatingComparisonChart() {
   const container = $("rating-comparison-chart");
   container.replaceChildren();
   const legend = node("div", "rating-chart-legend-controls");
-  const svg = make("svg", { viewBox: "0 0 420 308", role: "group", "aria-label": "Maia move probabilities by Lichess blitz rating" });
+  const svg = make("svg", { viewBox: "0 0 420 258", role: "group", "aria-label": "Maia move probabilities by Lichess blitz rating" });
   svg.append(make("title", {}, "Moves by Rating"), make("desc", {}, "Each curve shows one move’s probability. Focus any point for the exact rating and value. Click legend buttons to hide or show curves."));
   const series = moves.map((move, index) => ({
     move,
@@ -1246,30 +1243,30 @@ function renderRatingComparisonChart() {
   const maximum = Math.max(0.1, ...visible.flatMap((item) => item.values.map((point) => point.probability)));
   const maxTick = Math.min(1, Math.ceil(maximum / 0.2) * 0.2);
   const x = (rating) => 54 + ((rating - 400) / 2600) * 306;
-  const y = (probability) => 258 - probability / maxTick * 226;
+  const y = (probability) => 207 - probability / maxTick * 164;
   for (let i = 0; i <= 4; i++) {
     const tick = maxTick * i / 4;
     svg.append(make("line", { x1: 54, x2: 360, y1: y(tick), y2: y(tick), class: "rating-chart-grid" }));
     svg.append(make("text", { x: 46, y: y(tick) + 3, "text-anchor": "end", class: "rating-chart-axis" }, `${Math.round(tick * 100)}%`));
   }
   for (const rating of [400, 800, 1200, 1600, 2000, 2400, 3000]) {
-    svg.append(make("line", { x1: x(rating), x2: x(rating), y1: 32, y2: 258, class: "rating-chart-grid" }));
-    svg.append(make("text", { x: x(rating), y: 277, "text-anchor": "middle", class: "rating-chart-axis" }, String(rating)));
+    svg.append(make("line", { x1: x(rating), x2: x(rating), y1: 25, y2: 207, class: "rating-chart-grid" }));
+    svg.append(make("text", { x: x(rating), y: 226, "text-anchor": "middle", class: "rating-chart-axis" }, String(rating)));
   }
-  svg.append(make("text", { x: 207, y: 301, "text-anchor": "middle", class: "rating-chart-axis-title" }, "Lichess blitz rating"));
-  svg.append(make("text", { x: 15, y: 145, transform: "rotate(-90 15 145)", "text-anchor": "middle", class: "rating-chart-axis-title human-axis" }, "Maia probability"));
-  svg.append(make("line", { x1: x(Number($("elo").value)), x2: x(Number($("elo").value)), y1: 32, y2: 258, class: "rating-selected-rating" }));
+  svg.append(make("text", { x: 207, y: 250, "text-anchor": "middle", class: "rating-chart-axis-title" }, "Lichess blitz rating"));
+  svg.append(make("text", { x: 15, y: 116, transform: "rotate(-90 15 116)", "text-anchor": "middle", class: "rating-chart-axis-title human-axis" }, "Maia probability"));
+  svg.append(make("line", { x1: x(Number($("elo").value)), x2: x(Number($("elo").value)), y1: 25, y2: 207, class: "rating-selected-rating" }));
   const defs = make("defs");
   svg.append(defs);
   const endpointLabels = visible.map((item) => ({ item, target: y(item.values.at(-1).probability) })).sort((a, b) => a.target - b.target);
-  endpointLabels.forEach((label, index) => { label.labelY = Math.max(label.target, index ? endpointLabels[index - 1].labelY + 13 : 34); });
+  endpointLabels.forEach((label, index) => { label.labelY = Math.max(label.target, index ? endpointLabels[index - 1].labelY + 12 : 28); });
   if (endpointLabels.length) {
-    const overflow = Math.max(0, endpointLabels.at(-1).labelY - 258);
+    const overflow = Math.max(0, endpointLabels.at(-1).labelY - 207);
     endpointLabels.forEach((label) => { label.labelY -= overflow; });
   }
   const tooltip = node("div", "rating-chart-tooltip");
   tooltip.hidden = true;
-  const crosshair = make("line", { x1: 54, x2: 54, y1: 32, y2: 258, class: "rating-chart-crosshair", visibility: "hidden" });
+  const crosshair = make("line", { x1: 54, x2: 54, y1: 25, y2: 207, class: "rating-chart-crosshair", visibility: "hidden" });
   const showTooltip = (index) => {
     const prediction = predictions[index];
     tooltip.replaceChildren(node("strong", "", `${prediction.player_elo} vs. ${prediction.opponent_elo ?? prediction.player_elo} Elo`));
