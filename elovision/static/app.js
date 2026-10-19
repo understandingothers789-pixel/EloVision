@@ -252,7 +252,10 @@ function navigate(ply) {
   state.position = state.game.positions[state.ply];
   clearStockfishResult();
   renderBoard();
-  scheduleAnalysis(100);
+  // Navigation is an explicit action, so do not debounce it. Cached Maia and
+  // Stockfish results are restored synchronously; uncached positions begin
+  // their request immediately.
+  scheduleAnalysis();
 }
 function renderGame() {
   const game = state.game;

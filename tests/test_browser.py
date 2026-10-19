@@ -542,6 +542,14 @@ def test_browser_identifies_stale_stockfish_backend(page):
 def test_stockfish_results_return_from_cache_when_navigating_back(page):
     from playwright.sync_api import expect
 
+    page.add_init_script(
+        """window.__elovisionDebouncedNavigation = [];
+        const originalSetTimeout = window.setTimeout;
+        window.setTimeout = function (callback, delay, ...args) {
+          if (delay === 100) window.__elovisionDebouncedNavigation.push(delay);
+          return originalSetTimeout.call(this, callback, delay, ...args);
+        };"""
+    )
     engine_requests = []
     maia_requests = []
 
@@ -614,12 +622,14 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
     page.locator("#next").click()
+    assert page.evaluate("window.__elovisionDebouncedNavigation") == []
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
     expect(page.locator("#probability-total")).to_contain_text("Model pass")
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.22").wait_for()
     requests_after_searching_both_positions = len(engine_requests)
     maia_requests_after_searching_both_positions = len(maia_requests)
     page.locator("#prev").click()
+    assert page.evaluate("window.__elovisionDebouncedNavigation") == []
     expect(page.locator("#dual-human-moves .comparison-move").first).to_be_visible()
     expect(page.locator("#probability-total")).to_contain_text("Cached")
     assert "Waiting for Maia analysis" not in page.locator("#dual-human-moves").text_content()
