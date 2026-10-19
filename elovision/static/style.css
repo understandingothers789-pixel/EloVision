@@ -1894,6 +1894,29 @@ textarea {
   background: #171e19;
   border-color: var(--line);
 }
+.auto-stockfish-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 14px 0;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 10px;
+}
+.auto-stockfish-toggle input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.auto-stockfish-toggle strong,
+.auto-stockfish-toggle small {
+  display: block;
+}
+.auto-stockfish-toggle small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
 .stockfish-panel > summary { padding: 9px 11px; }
 .stockfish-controls { padding: 0 11px 11px; }
 .stockfish-controls > select { justify-self: stretch; width: 100%; }
@@ -2159,6 +2182,9 @@ body.analysis-theme .square.dark.last { background: #aeb34d; }
 .workspace.analysis-layout .dual-toolbar input[type='number'] { font-size: 10px; padding: 6px; }
 .workspace.analysis-layout .dual-toolbar .button { font-size: 11px; padding: 6px 14px; }
 .workspace.analysis-layout .stockfish-panel { margin: 0; background: #242025; border-color: var(--line); }
+.workspace.analysis-layout .auto-stockfish-toggle { margin: 10px 12px; }
+.workspace.analysis-layout .auto-stockfish-toggle strong { font-size: 10px; }
+.workspace.analysis-layout .auto-stockfish-toggle small { font-size: 9px; }
 .workspace.analysis-layout .stockfish-panel > summary { padding: 10px 12px; }
 .workspace.analysis-layout .stockfish-panel > summary strong { font-size: 12px; }
 .workspace.analysis-layout .stockfish-panel > summary small { font-size: 10px; }

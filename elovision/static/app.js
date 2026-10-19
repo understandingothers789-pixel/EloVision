@@ -345,8 +345,9 @@ function renderBoard() {
 function capitalize(value) {
   return value[0].toUpperCase() + value.slice(1);
 }
-function navigate(ply) {
+function navigate(ply, allowAutoStockfish = false) {
   if (!state.game) return;
+  const previousPly = state.ply;
   state.ply = Math.max(0, Math.min(state.game.moves.length, ply));
   state.position = state.game.positions[state.ply];
   clearStockfishResult();
@@ -354,7 +355,7 @@ function navigate(ply) {
   // Navigation is an explicit action, so do not debounce it. Cached Maia and
   // Stockfish results are restored synchronously; uncached positions begin
   // their request immediately.
-  scheduleAnalysis();
+  scheduleAnalysis(0, allowAutoStockfish && state.ply !== previousPly);
 }
 function renderGame() {
   const game = state.game;
@@ -405,7 +406,7 @@ function renderGame() {
     const button = node("button", "move-button", move.san);
     button.dataset.ply = move.ply;
     button.title = `${move.number}${move.color === "white" ? "." : "…"} ${move.san}`;
-    button.addEventListener("click", () => navigate(move.ply));
+    button.addEventListener("click", () => navigate(move.ply, true));
     row.append(button);
   }
   if (!game.moves.length)
@@ -520,7 +521,7 @@ async function importPgn(text) {
   );
   return true;
 }
-function scheduleAnalysis(delay = 0) {
+function scheduleAnalysis(delay = 0, autoStockfishForNewMove = false) {
   if (!state.position) return;
   const cachedMaia = !preview && state.mode !== "stockfish"
     ? readMaiaCache(analysisRequest())
@@ -558,7 +559,7 @@ function scheduleAnalysis(delay = 0) {
   if (state.mode === "stockfish") {
     $("loading").hidden = true;
     $("analysis-indicator").textContent = state.stockfishAvailable ? "STOCKFISH" : "ENGINE NEEDED";
-    if (state.stockfishAvailable) state.timer = setTimeout(() => {
+    if (state.stockfishAvailable && autoStockfishForNewMove && $("auto-stockfish").checked) state.timer = setTimeout(() => {
       const controller = new AbortController();
       state.controller = controller;
       const maiaTask = analyzeMaiaInBackground(payload(), controller.signal);
@@ -567,7 +568,8 @@ function scheduleAnalysis(delay = 0) {
         if (revision === state.revision) loadRatingComparisonChart(revision);
       });
     }, delay);
-    else engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
+    else if (!state.stockfishAvailable) engineMessage("Choose a Stockfish executable in Engine setup to analyze this position.");
+    else if (!state.stockfish) engineMessage("This position has not been analyzed yet. Click Analyze, or enable Auto-analyze new moves.");
     return;
   }
   $("loading").hidden = state.mode === "dual" || Boolean(cachedMaia);
@@ -582,8 +584,12 @@ function scheduleAnalysis(delay = 0) {
   }
   state.timer = setTimeout(() => {
     if (!cachedMaia) analyze(revision);
-    if (state.mode === "dual" && state.stockfishAvailable && !state.stockfish)
+    if (state.mode === "dual" && autoStockfishForNewMove && $("auto-stockfish").checked && state.stockfishAvailable)
       analyzeStockfish();
+    else if (state.mode === "dual" && !state.stockfish)
+      engineMessage(state.stockfishAvailable
+        ? "This position has not been analyzed yet. Click Analyze, or enable Auto-analyze new moves."
+        : "Choose a Stockfish executable in Engine setup to analyze this position.");
   }, delay);
 }
 function setExportButtonsDisabled(disabled) {
@@ -1407,7 +1413,7 @@ function setSettingsTab(tab) {
     panel.hidden = !active;
   }
 }
-const DEFAULT_ENGINE_SETTINGS = { multipv: 5, hash: 8, threads: 14, depth: 20, variations: false };
+const DEFAULT_ENGINE_SETTINGS = { multipv: 5, hash: 8, threads: 14, depth: 20, variations: false, autoAnalyze: false };
 const ENGINE_SETTINGS_KEY = "elovision-engine-settings-v1";
 function saveEngineSettings() {
   const settings = {
@@ -1416,6 +1422,7 @@ function saveEngineSettings() {
     threads: Number($("stockfish-threads").value),
     depth: Number($("stockfish-depth").value),
     variations: $("show-variations").checked,
+    autoAnalyze: $("auto-stockfish").checked,
   };
   try { localStorage.setItem(ENGINE_SETTINGS_KEY, JSON.stringify(settings)); } catch { /* Optional preference storage. */ }
 }
@@ -1428,6 +1435,7 @@ function restoreEngineSettings() {
     if (Number.isInteger(settings.threads) && settings.threads >= 1 && settings.threads <= 256) $("stockfish-threads").value = String(settings.threads);
     if ([10, 15, 20, 25, 30, 35, 40].includes(settings.depth)) $("stockfish-depth").value = String(settings.depth);
     if (typeof settings.variations === "boolean") $("show-variations").checked = settings.variations;
+    if (typeof settings.autoAnalyze === "boolean") $("auto-stockfish").checked = settings.autoAnalyze;
   } catch { /* Ignore stale or unavailable browser preferences. */ }
 }
 function setView(view) {
@@ -1546,6 +1554,7 @@ $("show-variations").addEventListener("change", () => {
   $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked || state.mode === "stockfish");
   saveEngineSettings();
 });
+$("auto-stockfish").addEventListener("change", saveEngineSettings);
 for (const id of ["stockfish-depth", "stockfish-lines-count", "stockfish-hash", "stockfish-threads"]) {
   $(id).addEventListener("change", () => {
     saveEngineSettings();
@@ -1611,8 +1620,6 @@ async function refreshStockfishStatus() {
     if (result.message) $("stockfish-status").title = result.message;
     stockfishError(result.message || "");
     setStockfishChannelLink();
-    if (result.available && state.position && ["dual", "stockfish"].includes(state.mode))
-      analyzeStockfish();
   } catch (error) {
     state.stockfishAvailable = false;
     updateWholeGameButton();
@@ -1916,7 +1923,6 @@ async function installStockfish(file) {
     engineMessage(`${data.name} is ready.`);
     stockfishError();
     setStockfishChannelLink();
-    if (["dual", "stockfish"].includes(state.mode)) analyzeStockfish();
   } catch (error) {
     // Installation replaces the old binary only after the candidate validates.
     // Keep the existing engine usable when a replacement upload is rejected.
@@ -1939,6 +1945,7 @@ async function installStockfish(file) {
 $("stockfish-analyze").addEventListener("click", () => analyzeStockfish());
 $("whole-game-analyze").addEventListener("click", analyzeWholeGame);
 $("engine-reset-defaults").addEventListener("click", () => {
+  $("auto-stockfish").checked = DEFAULT_ENGINE_SETTINGS.autoAnalyze;
   $("stockfish-lines-count").value = String(DEFAULT_ENGINE_SETTINGS.multipv);
   $("stockfish-hash").value = String(DEFAULT_ENGINE_SETTINGS.hash);
   $("stockfish-threads").value = String(DEFAULT_ENGINE_SETTINGS.threads);
@@ -2043,10 +2050,10 @@ $("flip").addEventListener("click", () => {
   state.flipped = !state.flipped;
   renderBoard();
 });
-$("first").addEventListener("click", () => navigate(0));
-$("prev").addEventListener("click", () => navigate(state.ply - 1));
-$("next").addEventListener("click", () => navigate(state.ply + 1));
-$("last").addEventListener("click", () => navigate(state.game.moves.length));
+$("first").addEventListener("click", () => navigate(0, true));
+$("prev").addEventListener("click", () => navigate(state.ply - 1, true));
+$("next").addEventListener("click", () => navigate(state.ply + 1, true));
+$("last").addEventListener("click", () => navigate(state.game.moves.length, true));
 document.addEventListener("keydown", (event) => {
   if (
     ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(
@@ -2057,7 +2064,7 @@ document.addEventListener("keydown", (event) => {
     return;
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
-    navigate(state.ply + (event.key === "ArrowRight" ? 1 : -1));
+    navigate(state.ply + (event.key === "ArrowRight" ? 1 : -1), true);
   }
 });
 $("game-select").addEventListener("change", () => {

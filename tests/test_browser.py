@@ -431,7 +431,8 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.route("**/api/v1/engine/analyze", engine_fixture)
     page.goto(BASE_URL)
     page.locator("#dual-human-moves .move-prediction").nth(4).wait_for()
-    page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
+    assert not page.locator("#auto-stockfish").is_checked()
+    assert engine_requested == []
     assert page.locator("#stockfish-lines-count").input_value() == "5"
     assert page.locator("#stockfish-depth").input_value() == "20"
     assert page.locator("#stockfish-lines-count option").count() == 5
@@ -440,15 +441,12 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     ]
     assert page.locator("#stockfish-hash").input_value() == "8"
     assert page.locator("#stockfish-threads").input_value() == "14"
-    assert engine_requested[-1]["multipv"] == 5
-    assert engine_requested[-1]["depth"] == 20
-    assert engine_requested[-1]["hash_mb"] == 8192
-    assert engine_requested[-1]["threads"] == 14
     assert page.locator("#dual-results .dual-column").count() == 2
     page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
     page.locator("#maia-warmup-status").filter(
         has_text="Maia ready · 34 positions"
     ).wait_for()
+    assert engine_requested == []
     page.locator("#whole-game-analyze").wait_for(state="visible")
     expect(page.locator("#whole-game-analyze")).to_be_enabled()
     page.get_by_role("button", name="Analyze Whole Game").click()
@@ -456,12 +454,16 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
         has_text="Complete · 34 positions analyzed"
     ).wait_for()
     page.locator("#whole-game-status").filter(has_text="Maia cached 34").wait_for()
+    page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
     whole_game_maia = [
         request for request in requested
         if len(request.get("matchups", [])) == 1 and "initial_fen" in request
     ]
     assert {len(request["moves"]) for request in whole_game_maia} == set(range(34))
     assert all(item["multipv"] == 5 for item in engine_requested)
+    assert all(item["depth"] == 20 for item in engine_requested)
+    assert all(item["hash_mb"] == 8192 for item in engine_requested)
+    assert all(item["threads"] == 14 for item in engine_requested)
     assert page.locator("#maia-gauge-marker").text_content().endswith("%")
     assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
     page.locator(".rating-chart-line").nth(4).wait_for(state="attached")
@@ -518,6 +520,8 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator(".human-column").is_hidden()
     assert page.locator(".rating-chart-panel").is_visible()
     assert page.locator(".stockfish-line .engine-pv").first.is_visible()
+    page.locator("#settings-tab-engine").click()
+    page.locator("#auto-stockfish").check()
     page.locator("#next").click()
     page.locator("#stockfish-results .stockfish-line").first.wait_for()
     assert any(
@@ -623,9 +627,16 @@ def test_whole_game_reuses_the_current_identical_stockfish_search(page):
         ),
     )
     page.goto(BASE_URL)
-    page.wait_for_function("window.__stockfishActive === 1")
+    page.locator("#settings-tab-engine").click()
+    page.locator("#auto-stockfish").check()
     page.locator("#sample").click()
     expect(page.locator("#whole-game-analyze")).to_be_enabled()
+    page.locator("#next").click()
+    for _ in range(100):
+        if page.evaluate("window.__stockfishActive") == 1:
+            break
+        page.wait_for_timeout(50)
+    assert page.evaluate("window.__stockfishActive") == 1
     page.locator("#whole-game-analyze").click()
     expect(page.locator("#whole-game-status")).to_contain_text("Complete · 34 positions analyzed")
     page.evaluate("window.__releaseFirstStockfish()")
@@ -644,17 +655,20 @@ def test_browser_engine_settings_persist_and_restore_defaults(page):
     page.locator("#stockfish-hash").press("Tab")
     page.locator("#stockfish-threads").fill("10")
     page.locator("#stockfish-threads").press("Tab")
+    page.locator("#auto-stockfish").check()
     page.reload()
     page.locator("#settings-tab-engine").click()
     assert page.locator("#stockfish-lines-count").input_value() == "3"
     assert page.locator("#stockfish-depth").input_value() == "30"
     assert page.locator("#stockfish-hash").input_value() == "6"
     assert page.locator("#stockfish-threads").input_value() == "10"
+    assert page.locator("#auto-stockfish").is_checked()
     page.locator("#engine-reset-defaults").click()
     assert page.locator("#stockfish-lines-count").input_value() == "5"
     assert page.locator("#stockfish-depth").input_value() == "20"
     assert page.locator("#stockfish-hash").input_value() == "8"
     assert page.locator("#stockfish-threads").input_value() == "14"
+    assert not page.locator("#auto-stockfish").is_checked()
 
 
 def test_browser_shows_stockfish_install_error_in_engine_setup(page):
@@ -837,6 +851,8 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
         has_text="Maia ready · 34 positions"
     ).wait_for()
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
+    page.locator("#settings-tab-engine").click()
+    page.locator("#stockfish-analyze").click()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
     def maia_position_requests():
         return [
@@ -849,6 +865,8 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     assert page.evaluate("window.__elovisionDebouncedNavigation") == []
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
     expect(page.locator("#probability-total")).to_contain_text("Cached")
+    assert len(engine_requests) == 1
+    page.locator("#stockfish-analyze").click()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.22").wait_for()
     requests_after_searching_both_positions = len(engine_requests)
     assert len(maia_position_requests()) == maia_requests_after_warmup
@@ -862,7 +880,6 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     assert len(engine_requests) == requests_after_searching_both_positions
     assert len(maia_position_requests()) == maia_requests_after_warmup
     assert page.locator("#stockfish-results .stockfish-line").count() == 1
-    page.locator("#settings-tab-engine").click()
     page.locator("#stockfish-analyze").click()
     page.wait_for_timeout(100)
     assert len(engine_requests) == requests_after_searching_both_positions
@@ -1071,6 +1088,7 @@ def test_stockfish_cache_survives_switching_between_pgn_games(page):
 
     page.route("**/api/v1/engine/analyze", analyze_stockfish)
     page.goto(BASE_URL)
+    page.locator("#settings-tab-engine").click()
     pgn = (
         '[Event "First"]\n[White "A"]\n[Black "B"]\n\n1. e4 e5 *\n\n'
         '[Event "Second"]\n[White "C"]\n[Black "D"]\n\n1. d4 d5 *\n'
@@ -1080,15 +1098,22 @@ def test_stockfish_cache_survives_switching_between_pgn_games(page):
     )
     page.locator("#game-select option").nth(1).wait_for(state="attached")
     page.wait_for_timeout(300)
+    assert engine_requests == []
+    page.locator("#auto-stockfish").check()
+    page.get_by_role("button", name="e4", exact=True).click()
     page.locator("#stockfish-results .stockfish-line").first.wait_for()
-    assert any("initial_fen" in request for request in engine_requests)
     first_count = len(engine_requests)
     page.locator("#game-select").select_option("1")
+    page.get_by_role("button", name="d4", exact=True).click()
+    page.locator("#stockfish-results .stockfish-line").first.wait_for()
     page.wait_for_timeout(200)
-    assert len(engine_requests) == first_count
+    second_count = len(engine_requests)
+    assert second_count == first_count + 1
     page.locator("#game-select").select_option("0")
+    page.get_by_role("button", name="e4", exact=True).click()
+    page.locator("#stockfish-results .stockfish-line").first.wait_for()
     page.wait_for_timeout(200)
-    assert len(engine_requests) == first_count
+    assert len(engine_requests) == second_count
 
 
 def test_browser_upload_accepts_150_mib_engine_file(page):
@@ -1124,3 +1149,107 @@ def test_browser_upload_accepts_150_mib_engine_file(page):
     )
     page.get_by_text("Stockfish 19 browser fixture · ready", exact=True).wait_for()
     assert requested == ["stockfish-windows-x86-64-universal.exe"]
+
+
+def test_auto_stockfish_is_opt_in_and_maia_still_warms_the_selected_game(page):
+    maia_requests = []
+    engine_requests = []
+
+    def analyze_maia(route):
+        data = json.loads(route.request.post_data)
+        maia_requests.append(data)
+        board = chess.Board(data["fen"])
+        legal = list(board.legal_moves)
+        moves = [
+            {
+                "uci": move.uci(),
+                "san": board.san(move),
+                "probability": 1 / len(legal),
+                "rank": rank,
+            }
+            for rank, move in enumerate(legal, 1)
+        ]
+        route.fulfill(
+            json={
+                "predictions": [
+                    {
+                        "player_elo": 1800,
+                        "opponent_elo": 1800,
+                        "moves": moves,
+                        "cached": False,
+                    }
+                ]
+            }
+        )
+
+    page.route("**/api/v1/analyze", analyze_maia)
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={
+                "available": True,
+                "name": "Stockfish 19 browser fixture",
+                "channel": "official19",
+            }
+        ),
+    )
+
+    def analyze_engine(route):
+        data = json.loads(route.request.post_data)
+        engine_requests.append(data)
+        board = chess.Board(data["fen"])
+        move = next(iter(board.legal_moves))
+        route.fulfill(
+            json={
+                "engine": "Stockfish 19 browser fixture",
+                "channel": "official19",
+                "depth": data["depth"],
+                "lines": [
+                    {
+                        "rank": 1,
+                        "uci": move.uci(),
+                        "san": board.san(move),
+                        "score": "+0.10",
+                        "pv": [board.san(move)],
+                        "depth": data["depth"],
+                    }
+                ],
+            }
+        )
+
+    page.route("**/api/v1/engine/analyze", analyze_engine)
+    page.goto(BASE_URL)
+    page.locator("#dual-human-moves .move-prediction").first.wait_for()
+    assert not page.locator("#auto-stockfish").is_checked()
+    pgn = '[Event "Auto test"]\n[White "A"]\n[Black "B"]\n\n1. e4 e5 *\n'
+    page.locator("#pgn-file").set_input_files(
+        {"name": "auto-test.pgn", "mimeType": "text/plain", "buffer": pgn.encode()}
+    )
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready · 3 positions").wait_for()
+    assert any("initial_fen" in request for request in maia_requests)
+    assert engine_requests == []
+
+    page.get_by_role("button", name="e4", exact=True).click()
+    page.wait_for_timeout(100)
+    assert engine_requests == []
+    assert any(len(request.get("moves", [])) == 1 for request in maia_requests)
+
+    page.locator("#settings-tab-engine").click()
+    page.locator("#auto-stockfish").check()
+    page.get_by_role("button", name="e5", exact=True).click()
+    for _ in range(40):
+        if len(engine_requests) >= 1:
+            break
+        page.wait_for_timeout(50)
+    assert len(engine_requests) == 1
+    assert len(engine_requests[0]["moves"]) == 2
+
+    page.get_by_role("button", name="e4", exact=True).click()
+    for _ in range(40):
+        if len(engine_requests) >= 2:
+            break
+        page.wait_for_timeout(50)
+    assert len(engine_requests) == 2
+    page.get_by_role("button", name="e5", exact=True).click()
+    page.wait_for_timeout(100)
+    assert len(engine_requests) == 2
