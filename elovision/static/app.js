@@ -24,6 +24,7 @@ const state = {
   predictions: [],
   stockfish: null,
   stockfishAvailable: false,
+  wholeGameController: null,
   hoverMove: null,
   hiddenChartMoves: new Set(),
   selectedMove: null,
@@ -229,6 +230,7 @@ function navigate(ply) {
 }
 function renderGame() {
   const game = state.game;
+  updateWholeGameButton();
   const meta = $("game-meta");
   meta.replaceChildren();
   meta.classList.add("imported");
@@ -1263,6 +1265,13 @@ $("stockfish-depth").addEventListener("change", () => analyzeStockfish(true));
 $("stockfish-lines-count").addEventListener("change", () => analyzeStockfish(true));
 $("stockfish-hash").addEventListener("change", () => analyzeStockfish(true));
 $("stockfish-threads").addEventListener("change", () => analyzeStockfish(true));
+function updateWholeGameButton() {
+  const button = $("whole-game-analyze");
+  if (!button) return;
+  const running = Boolean(state.wholeGameController);
+  button.disabled = !running && (!state.game || !state.stockfishAvailable);
+  button.textContent = running ? "Cancel analysis" : "Analyze Whole Game";
+}
 function clearStockfishResult() {
   const key = state.position ? stockfishRequestKey() : null;
   const cached = key ? state.stockfishCache.get(key) : null;
@@ -1308,6 +1317,7 @@ async function refreshStockfishStatus() {
       ? `${result.name}: Engine Moves`
       : "Stockfish 19: Engine Moves";
     $("stockfish-analyze").disabled = !result.available;
+    updateWholeGameButton();
     if (result.message) $("stockfish-status").title = result.message;
     stockfishError(result.message || "");
     setStockfishChannelLink();
@@ -1315,6 +1325,7 @@ async function refreshStockfishStatus() {
       analyzeStockfish();
   } catch (error) {
     state.stockfishAvailable = false;
+    updateWholeGameButton();
     const outdated = error.status === 404;
     $("stockfish-status").textContent = outdated
       ? "Older ELO Vision server detected"
@@ -1350,18 +1361,25 @@ function renderStockfish(result) {
     container.append(row);
   }
 }
-function stockfishRequestKey() {
-  return `${JSON.stringify(payload())}|${$("stockfish-depth").value}|${$("stockfish-lines-count").value}|${$("stockfish-hash").value}|${$("stockfish-threads").value}`;
+function stockfishRequestKey(positionPayload = payload(), settings = null) {
+  const selected = settings || {
+    depth: $("stockfish-depth").value,
+    multipv: $("stockfish-lines-count").value,
+    hash: $("stockfish-hash").value,
+    threads: $("stockfish-threads").value,
+  };
+  return `${JSON.stringify(positionPayload)}|${selected.depth}|${selected.multipv}|${selected.hash}|${selected.threads}`;
+}
+function rememberStockfishResult(key, result) {
+  state.stockfishCache.delete(key);
+  state.stockfishCache.set(key, result);
+  while (state.stockfishCache.size > 4096)
+    state.stockfishCache.delete(state.stockfishCache.keys().next().value);
 }
 function showStockfishResult(result, key, remember = true, refreshHuman = true) {
   state.stockfish = result;
   state.stockfishPositionKey = key;
-  if (remember) {
-    state.stockfishCache.delete(key);
-    state.stockfishCache.set(key, result);
-    while (state.stockfishCache.size > 128)
-      state.stockfishCache.delete(state.stockfishCache.keys().next().value);
-  }
+  if (remember) rememberStockfishResult(key, result);
   stockfishError();
   renderStockfish(result);
   if (refreshHuman && state.mode === "dual") {
@@ -1370,6 +1388,72 @@ function showStockfishResult(result, key, remember = true, refreshHuman = true) 
   }
   renderGauges();
   renderMoveArrows();
+}
+async function analyzeWholeGame() {
+  if (state.wholeGameController) {
+    state.wholeGameController.abort();
+    $("whole-game-status").textContent = "Stopping after the current engine request…";
+    return;
+  }
+  if (!state.game || !state.stockfishAvailable) return;
+  const game = state.game;
+  const settings = {
+    depth: Number($("stockfish-depth").value),
+    multipv: Number($("stockfish-lines-count").value),
+    hash: Number($("stockfish-hash").value),
+    threads: Number($("stockfish-threads").value),
+  };
+  if (!Number.isInteger(settings.hash) || settings.hash < 1 || settings.hash > 64 ||
+      !Number.isInteger(settings.threads) || settings.threads < 1 || settings.threads > 256) {
+    $("whole-game-status").textContent = "Check Hash (1–64 GB) and Threads (1–256) settings.";
+    return;
+  }
+  const controller = new AbortController();
+  state.wholeGameController = controller;
+  updateWholeGameButton();
+  const total = game.positions.length;
+  let completed = 0;
+  try {
+    for (let ply = 0; ply < total; ply += 1) {
+      if (controller.signal.aborted) break;
+      const positionPayload = {
+        fen: game.positions[ply].fen,
+        initial_fen: game.initial_fen,
+        moves: game.moves.slice(0, ply).map((move) => move.uci),
+      };
+      const key = stockfishRequestKey(positionPayload, settings);
+      if (!state.stockfishCache.has(key)) {
+        $("whole-game-status").textContent = `Analyzing position ${ply + 1} of ${total} · depth ${settings.depth}, MultiPV ${settings.multipv}`;
+        const response = await fetch(localUrl("api/v1/engine/analyze"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...positionPayload,
+            depth: settings.depth,
+            multipv: settings.multipv,
+            hash_mb: settings.hash * 1024,
+            threads: settings.threads,
+          }),
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error?.message || `Engine request failed (${response.status}).`);
+        rememberStockfishResult(key, data);
+        if (state.game === game && state.position?.fen === positionPayload.fen && key === stockfishRequestKey())
+          showStockfishResult(data, key, false);
+      }
+      completed += 1;
+      $("whole-game-status").textContent = `Analyzed ${completed} of ${total} positions`;
+    }
+    if (controller.signal.aborted) $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed`;
+    else $("whole-game-status").textContent = `Complete · ${completed} positions analyzed`;
+  } catch (error) {
+    if (error.name === "AbortError") $("whole-game-status").textContent = `Stopped · ${completed} of ${total} positions analyzed`;
+    else $("whole-game-status").textContent = `Stopped at ${completed + 1} of ${total}: ${error.message}`;
+  } finally {
+    if (state.wholeGameController === controller) state.wholeGameController = null;
+    updateWholeGameButton();
+  }
 }
 async function analyzeStockfish(force = false) {
   const hashGb = Number($("stockfish-hash").value);
@@ -1464,6 +1548,7 @@ async function installStockfish(file) {
     $("stockfish-status").textContent = `${data.name} · ready`;
     $("stockfish-channel").value = data.channel;
     $("stockfish-analyze").disabled = false;
+    updateWholeGameButton();
     engineMessage(`${data.name} is ready.`);
     stockfishError();
     setStockfishChannelLink();
@@ -1482,6 +1567,7 @@ async function installStockfish(file) {
   }
 }
 $("stockfish-analyze").addEventListener("click", () => analyzeStockfish(true));
+$("whole-game-analyze").addEventListener("click", analyzeWholeGame);
 $("stockfish-choose").addEventListener("click", () => $("stockfish-file").click());
 $("stockfish-file").addEventListener("change", (event) => installStockfish(event.target.files[0]));
 function generatedRatings(count, requestedSpacing) {

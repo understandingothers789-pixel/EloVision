@@ -18,7 +18,7 @@ for raw in sys.stdin:
         print("id name Stockfish 19 protocol fixture")
         print("option name Threads type spin default 1 min 1 max 256")
         print("option name Hash type spin default 16 min 1 max 32768")
-        print("option name MultiPV type spin default 1 min 1 max 5")
+        print("option name MultiPV type spin default 1 min 1 max 40")
         print("uciok", flush=True)
     elif line == "isready":
         print("readyok", flush=True)
@@ -29,6 +29,15 @@ for raw in sys.stdin:
         print("info depth 16 multipv 1 score cp 35 pv e2e4", flush=True)
         print("info depth 16 multipv 2 score cp 21 pv d2d4", flush=True)
         print("info depth 16 multipv 3 score cp 12 pv g1f3", flush=True)
+        print("info depth 16 multipv 4 score cp 10 pv b1c3", flush=True)
+        print("info depth 16 multipv 5 score cp 9 pv b1a3", flush=True)
+        print("info depth 16 multipv 6 score cp 8 pv g1h3", flush=True)
+        remaining_moves = (
+            "a2a3", "a2a4", "b2b3", "b2b4", "c2c3", "c2c4", "d2d3",
+            "e2e3", "f2f3", "f2f4", "g2g3", "g2g4", "h2h3", "h2h4",
+        )
+        for index, move in enumerate(remaining_moves, 7):
+            print(f"info depth 16 multipv {{index}} score cp 5 pv {{move}}", flush=True)
         print("bestmove e2e4", flush=True)
     elif line == "quit":
         break
@@ -59,19 +68,27 @@ def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         result = response.json()
-        assert [line["san"] for line in result["lines"]] == ["e4", "d4", "Nf3"]
-        assert [line["score"] for line in result["lines"]] == ["+0.35", "+0.21", "+0.12"]
+        assert [line["san"] for line in result["lines"][:3]] == ["e4", "d4", "Nf3"]
+        assert [line["score"] for line in result["lines"][:3]] == ["+0.35", "+0.21", "+0.12"]
         assert result["channel"] == "official19"
         configured = uci_log.read_text(encoding="utf-8")
         assert "setoption name Threads value 14" in configured
         assert "setoption name Hash value 8192" in configured
+        wide = client.post(
+            "/api/v1/engine/analyze",
+            json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 40},
+        )
+        assert wide.status_code == 200, wide.text
+        assert len(wide.json()["lines"]) == 20
+        assert client.post(
+            "/api/v1/engine/analyze",
+            json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 41},
+        ).status_code == 422
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The protocol fixture uses a Unix executable script.")
 def test_stockfish_development_channel_accepts_dev_build_and_persists(tmp_path):
-    dev_engine = FAKE_STOCKFISH.replace(b"Stockfish 19", b"Stockfish dev-20261019").replace(
-        b"max 5", b"max 12"
-    )
+    dev_engine = FAKE_STOCKFISH.replace(b"Stockfish 19", b"Stockfish dev-20261019")
     engine_dir = tmp_path / ".engines"
     service = StockfishService(engine_dir)
     result = service.install("stockfish-dev.bin", dev_engine, "development")

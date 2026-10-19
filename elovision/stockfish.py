@@ -228,15 +228,15 @@ class StockfishService:
         self,
         request: PredictionRequest,
         depth: int = 16,
-        multipv: int = 5,
+        multipv: int = 20,
         hash_mb: int = 8192,
         threads: int = 14,
     ):
         if not 10 <= depth <= 22:
             raise VisionError("stockfish_depth", "Choose a search depth between 10 and 22.", 422)
-        if not 1 <= multipv <= 12:
+        if not 1 <= multipv <= 40:
             raise VisionError(
-                "stockfish_multipv", "Request between one and twelve engine lines.", 422
+                "stockfish_multipv", "Request between one and forty engine lines.", 422
             )
         if not 1 <= hash_mb <= 65536:
             raise VisionError("stockfish_hash", "Choose a hash size between 1 MiB and 64 GiB.", 422)

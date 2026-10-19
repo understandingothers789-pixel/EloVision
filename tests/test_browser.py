@@ -173,6 +173,8 @@ def test_browser_does_not_display_stale_analysis(page):
 
 
 def test_browser_switches_between_dual_and_pure_stockfish_views(page):
+    from playwright.sync_api import expect
+
     errors = []
     requested = []
     engine_requested = []
@@ -256,13 +258,21 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.goto(BASE_URL)
     page.locator("#dual-human-moves .move-prediction").nth(4).wait_for()
     page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
-    assert page.locator("#stockfish-lines-count").input_value() == "5"
+    assert page.locator("#stockfish-lines-count").input_value() == "20"
     assert page.locator("#stockfish-hash").input_value() == "8"
     assert page.locator("#stockfish-threads").input_value() == "14"
-    assert engine_requested[-1]["multipv"] == 5
+    assert engine_requested[-1]["multipv"] == 20
     assert engine_requested[-1]["hash_mb"] == 8192
     assert engine_requested[-1]["threads"] == 14
     assert page.locator("#dual-results .dual-column").count() == 2
+    page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
+    page.locator("#whole-game-analyze").wait_for(state="visible")
+    expect(page.locator("#whole-game-analyze")).to_be_enabled()
+    page.get_by_role("button", name="Analyze Whole Game").click()
+    page.locator("#whole-game-status").filter(
+        has_text="Complete · 34 positions analyzed"
+    ).wait_for()
+    assert all(item["multipv"] == 20 for item in engine_requested)
     assert page.locator("#maia-gauge-marker").text_content().endswith("%")
     assert page.locator("#sf-gauge-marker").text_content() == "+0.35"
     page.locator(".rating-chart-line").nth(4).wait_for(state="attached")

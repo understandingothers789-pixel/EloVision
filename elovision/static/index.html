@@ -211,6 +211,8 @@
           <div class="panel-heading">
             <h2><span class="analysis-heading-icon" aria-hidden="true">▥</span> Analysis</h2>
             <span id="analysis-indicator" class="live-label">MAIA 3</span>
+            <button id="whole-game-analyze" class="button secondary whole-game-button" disabled>Analyze Whole Game</button>
+            <small id="whole-game-status" class="whole-game-status" aria-live="polite"></small>
             <button id="analysis-collapse" class="analysis-collapse" aria-expanded="true" aria-controls="analysis-card">Hide</button>
           </div>
           <div class="analysis-views" role="tablist" aria-label="Analysis view">
@@ -304,7 +306,7 @@
             <div id="analysis-control-slot"></div>
             <div class="dual-toolbar">
               <label>Human moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
-              <label>MultiPV<select id="stockfish-lines-count"><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option><option value="5" selected>5 lines</option><option value="6">6 lines</option><option value="8">8 lines</option><option value="10">10 lines</option><option value="12">12 lines</option></select></label>
+              <label>MultiPV<select id="stockfish-lines-count"><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option><option value="5">5 lines</option><option value="6">6 lines</option><option value="8">8 lines</option><option value="10">10 lines</option><option value="12">12 lines</option><option value="15">15 lines</option><option value="20" selected>20 lines</option><option value="25">25 lines</option><option value="30">30 lines</option><option value="35">35 lines</option><option value="40">40 lines</option></select></label>
               <label>Hash (GB)<input id="stockfish-hash" type="number" min="1" max="64" step="1" value="8" inputmode="numeric" /></label>
               <label>Threads<input id="stockfish-threads" type="number" min="1" max="256" step="1" value="14" inputmode="numeric" /></label>
               <label>Depth<select id="stockfish-depth"><option value="12">12 · quick</option><option value="16" selected>16 · balanced</option><option value="18">18 · deeper</option><option value="20">20 · deepest</option></select></label>
