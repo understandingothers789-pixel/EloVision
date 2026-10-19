@@ -579,7 +579,7 @@ function scheduleAnalysis(delay = 0, autoStockfishForNewMove = false) {
     state.predictions = cachedMaia.predictions;
     renderPredictions();
     setExportButtonsDisabled(false);
-    $("model-status").textContent = "Ready · CPU · Offline";
+    $("model-status").textContent = readyModelStatus(state.predictions[0]?.model);
     if (state.mode === "dual") loadRatingComparisonChart(revision);
   }
   state.timer = setTimeout(() => {
@@ -614,7 +614,7 @@ async function analyze(revision) {
     )
       ? "CACHED"
       : "MAIA 3";
-    $("model-status").textContent = "Ready · CPU · Offline";
+    $("model-status").textContent = readyModelStatus(data.predictions[0]?.model);
     if (state.mode === "dual") loadRatingComparisonChart(revision);
   } catch (error) {
     if (revision !== state.revision || error.name === "AbortError") return;
@@ -648,6 +648,10 @@ function analyzeMaiaInBackground(position, signal) {
   return api("analyze", maiaRequestForPosition(position), signal).catch(() => null);
 }
 const pct = (p) => `${(p * 100).toFixed(2)}%`;
+function readyModelStatus(model) {
+  const device = model?.device_label || (model?.device === "cpu" ? "CPU" : model?.device || "Auto");
+  return `Ready · ${device} · Offline`;
+}
 function limitRows(rows, selector = "maia-move-limit") {
   return $(selector).value === "all"
     ? rows
@@ -2210,7 +2214,7 @@ try {
   ]);
   state.position = position;
   $("model-status").textContent = health.loaded
-    ? "Ready · CPU · Offline"
+    ? readyModelStatus(health)
     : health.installed
       ? "Installed · Loading on first analysis"
       : "Weights not installed";

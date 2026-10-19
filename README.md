@@ -2,7 +2,7 @@
 
 Explore how human chess choices change with playing strength. Import a PGN, move through a game, and compare Maia 3 79M's complete legal-move policy across **400–3000 Lichess blitz ratings**. Everything runs locally; normal analysis has no network dependency or paid API.
 
-**Validation status:** the Python backend, official Maia tokenizer/vocabulary adapter, PGN navigation, exports, and browser interactions have been tested on Linux with CPU PyTorch. Official model metadata and the AGPLv3 model card were retrieved, but the cloud proxy blocks the weight CDN. Real-model loading/inference, model benchmarks, and Windows execution have **not** been verified. The app reports missing weights and never supplies fabricated probabilities. See [validation](docs/VALIDATION.md) for exact checks and remaining acceptance steps.
+**Validation status:** the Python backend, official Maia tokenizer/vocabulary adapter, PGN navigation, exports, and browser interactions have been tested on Linux with CPU PyTorch. Automatic CUDA/ROCm selection is implemented, but GPU inference and benchmarks on the Ryzen 7 9800X3D / Radeon RX 9070 XT have not been verified. Official model metadata and the AGPLv3 model card were retrieved, but the cloud proxy blocks the weight CDN. Real-model loading/inference, model benchmarks, and Windows execution have **not** been verified. The app reports missing weights and never supplies fabricated probabilities. See [validation](docs/VALIDATION.md) for exact checks and remaining acceptance steps.
 
 ## Preview the interface
 
@@ -24,7 +24,7 @@ regenerate the standalone preview with `python scripts/build_preview.py`.
 4. Double-click **`start.bat`**. The local server starts and opens your browser. Keep its terminal open while using the application; close it or press Ctrl+C to stop.
 5. Click **Import PGN**, or **Open a sample game**. Use the move list, navigation controls, or left/right keys. The explorer opens with **1400, 1800, and 2200** side by side. Choose 1–8 rating columns and generate them at 100, 200, 400, or custom spacing around 1800; then edit any rating directly. Opponent Elo can be linked or set independently. The sample library includes nine games and studies.
 
-The recommended initial device is **CPU**, including on the Ryzen 7 9800X3D / RX 9070 XT system. No CUDA assumption or AMD GPU requirement is made. The 79M checkpoint has roughly 316 MB of float32 parameters; the download/cache can use additional disk space. Performance and peak memory have not yet been measured on the target PC.
+By default, `ELOVISION_DEVICE=auto` uses a GPU if the installed PyTorch build can access one, and otherwise falls back to CPU. NVIDIA CUDA and AMD ROCm are reported separately; PyTorch exposes both through its `cuda` device API. The standard Windows installer and Linux example below install CPU-only PyTorch, so they will use the Ryzen CPU until you replace that wheel with a PyTorch build compatible with your OS, GPU and driver. ELO Vision does not replace PyTorch automatically. You can set `ELOVISION_DEVICE=cpu` to force CPU, or `ELOVISION_DEVICE=cuda` to require an available GPU. The 79M checkpoint has roughly 316 MB of float32 parameters; performance and peak VRAM remain unverified on the target PC.
 
 ## Features
 
@@ -68,6 +68,13 @@ python -m elovision model install          # retain an already verified installa
 python -m elovision model verify          # verify the local checksum without network access
 python -m elovision model install --force  # explicitly replace corrupted or outdated weights
 ```
+
+The model status reports the selected backend and GPU after the first inference.
+Run `python scripts/benchmark.py --devices both` in the project's virtual
+environment with verified weights installed to compare actual CPU and available
+GPU latency, throughput, peak GPU memory and probability deltas. If no GPU is
+visible to PyTorch, the script reports CPU-only results; it does not simulate a
+GPU run.
 
 Normal inference reads only these local files and uses `torch.load(weights_only=True)` with strict state-dict loading. The adapter reuses upstream preprocessing, eight-position history, 4352-entry move vocabulary, black-side mirroring, promotion encoding, legal masking, and unmodified softmax. It does not use UCI MultiPV, a sampling temperature, top-k, top-p filtering, or a chess engine as a substitute. See [research notes](docs/MAIA.md).
 

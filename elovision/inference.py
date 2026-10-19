@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import logging
 import threading
 import time
 from collections import OrderedDict, deque
@@ -13,6 +14,7 @@ import chess
 
 from .chess_state import replay_position
 from .config import UPSTREAM_REVISION, ModelConfig
+from .device import device_details, resolve_device
 from .errors import VisionError
 from .model_files import verified_manifest
 from .probability import validate_distribution
@@ -54,22 +56,51 @@ class MaiaPolicy:
             from maia3.utils import get_all_possible_moves
 
             torch.set_num_threads(self.config.threads)
-            self.cfg = parse_args(["--model", "maia3-79m", "--device", "cpu", "--no-use-amp"])
+            device = resolve_device(torch, self.config.device)
+            self.cfg = parse_args(["--model", "maia3-79m", "--device", device, "--no-use-amp"])
             self.cfg.checkpoint_path = str(self.config.checkpoint)
-            model = MAIA3Model(self.cfg)
             checkpoint = torch.load(self.config.checkpoint, map_location="cpu", weights_only=True)
             state = checkpoint.get("model_state_dict", checkpoint)
             # Same legacy key mapping as official load_model, with strict validation.
             state = {key.replace("smolgen", "gab"): value for key, value in state.items()}
-            model.load_state_dict(state, strict=True)
+
+            def build_model(target_device):
+                cfg = parse_args(
+                    ["--model", "maia3-79m", "--device", target_device, "--no-use-amp"]
+                )
+                cfg.checkpoint_path = str(self.config.checkpoint)
+                candidate = MAIA3Model(cfg)
+                candidate.load_state_dict(state, strict=True)
+                candidate = candidate.to(target_device)
+                actual = next(candidate.parameters()).device
+                if actual.type != torch.device(target_device).type:
+                    raise RuntimeError(
+                        f"Maia model placement mismatch: requested {target_device}, "
+                        f"loaded on {actual}."
+                    )
+                return cfg, candidate, actual
+
+            try:
+                self.cfg, model, model_device = build_model(device)
+            except (RuntimeError, OSError) as exc:
+                if self.config.device.strip().lower() != "auto" or device == "cpu":
+                    raise
+                logging.warning("Maia GPU initialization failed (%s); retrying on CPU", exc)
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                device = "cpu"
+                self.cfg, model, model_device = build_model(device)
             self.model = model.eval()
             self.vocabulary = {move: i for i, move in enumerate(get_all_possible_moves())}
+            hardware = device_details(torch, model_device)
             self.metadata = {
                 "id": "maia3-79m",
                 "weights_sha256": manifest["sha256"],
                 "weights_revision": manifest["revision"],
                 "source_revision": UPSTREAM_REVISION,
-                "device": "cpu",
+                **hardware,
                 "precision": "float32",
                 "history_positions": 8,
                 "policy": "legal-mask-softmax",
@@ -78,6 +109,9 @@ class MaiaPolicy:
                 "rating_system": "Lichess blitz",
             }
             self.load_seconds = time.perf_counter() - started
+            logging.info(
+                f"Maia 3 ready: {hardware['device_label']} · weights on {model_device}",
+            )
         except (ImportError, RuntimeError, ValueError, OSError, KeyError) as exc:
             self.model = None
             raise VisionError(
@@ -90,6 +124,24 @@ class MaiaPolicy:
 
     def predict(self, board: chess.Board, ratings: list[tuple[int, int]]) -> list[list[dict]]:
         self.load()
+        try:
+            return self._predict_on_current_device(board, ratings)
+        except (RuntimeError, OSError) as exc:
+            if self.config.device.strip().lower() != "auto" or not str(
+                self.metadata.get("device", "")
+            ).startswith("cuda"):
+                raise
+            import torch
+
+            logging.warning("Maia GPU inference failed (%s); retrying on CPU", exc)
+            self.model = self.model.to("cpu")
+            self.cfg.device = "cpu"
+            self.metadata.update(device_details(torch, next(self.model.parameters()).device))
+            return self._predict_on_current_device(board, ratings)
+
+    def _predict_on_current_device(
+        self, board: chess.Board, ratings: list[tuple[int, int]]
+    ) -> list[list[dict]]:
         import torch
         from maia3.dataset import get_historical_tokens, get_legal_moves_mask, tokenize_board
         from maia3.utils import mirror_move
@@ -105,6 +157,8 @@ class MaiaPolicy:
             (tokenize_board(b) for b in reversed(history_boards)), maxlen=self.cfg.history
         )
         tokens = get_historical_tokens(history, self.cfg, 0.0, 0.0, 0.0, 0.0)
+        device = torch.device(self.metadata.get("device", "cpu"))
+        tokens = tokens.to(device)
         mask = get_legal_moves_mask(board, self.vocabulary)
         legal = list(board.legal_moves)
         indices = [self.vocabulary[m.uci() if board.turn else mirror_move(m.uci())] for m in legal]
@@ -112,17 +166,21 @@ class MaiaPolicy:
             raise VisionError("unsupported_move", "The model vocabulary missed a legal move.", 500)
         output = []
         # Small chunks bound attention memory on CPU while sharing input preparation.
+        device_mask = mask.to(device)
         with torch.inference_mode():
             for start in range(0, len(ratings), 4):
                 chunk = ratings[start : start + 4]
                 logits, _, _ = self.model(
                     tokens.unsqueeze(0).expand(len(chunk), -1, -1),
-                    torch.tensor([r[0] for r in chunk], dtype=torch.long),
-                    torch.tensor([r[1] for r in chunk], dtype=torch.long),
+                    torch.tensor([r[0] for r in chunk], dtype=torch.long, device=device),
+                    torch.tensor([r[1] for r in chunk], dtype=torch.long, device=device),
                 )
-                if logits.shape != (len(chunk), 4352) or not torch.isfinite(logits[:, mask]).all():
+                finite = torch.isfinite(logits[:, device_mask]).all()
+                if logits.shape != (len(chunk), 4352) or not finite:
                     raise VisionError("invalid_policy", "Maia returned invalid policy logits.", 500)
-                probabilities = torch.softmax(logits.float().masked_fill(~mask, -torch.inf), dim=-1)
+                probabilities = torch.softmax(
+                    logits.float().masked_fill(~device_mask, -torch.inf), dim=-1
+                ).cpu()
                 for row in probabilities:
                     distribution = [
                         {
@@ -154,7 +212,10 @@ class InferenceService:
             "model": "Maia 3 79M",
             "loaded": getattr(self.policy, "model", None) is not None,
             "installed": self.config.checkpoint.is_file() and self.config.manifest.is_file(),
-            "device": "CPU",
+            "device": self.policy.metadata.get("device", self.config.device),
+            "backend": self.policy.metadata.get("backend"),
+            "device_name": self.policy.metadata.get("device_name"),
+            "device_label": self.policy.metadata.get("device_label"),
             "cache_entries": len(self._cache),
             "cache_hits": self.hits,
             "cache_misses": self.misses,

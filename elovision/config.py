@@ -24,6 +24,7 @@ class ModelConfig:
             1, min(4, int(os.environ.get("ELOVISION_THREADS", str(os.cpu_count() or 1))))
         )
     )
+    device: str = field(default_factory=lambda: os.environ.get("ELOVISION_DEVICE", "auto"))
     cache_size: int = 1024
 
     @property
