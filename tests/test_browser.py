@@ -582,8 +582,10 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     requests_after_searching_both_positions = len(engine_requests)
     maia_requests_after_searching_both_positions = len(maia_requests)
     page.locator("#prev").click()
-    page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
+    expect(page.locator("#dual-human-moves .comparison-move").first).to_be_visible()
     expect(page.locator("#probability-total")).to_contain_text("Cached")
+    assert "Waiting for Maia analysis" not in page.locator("#dual-human-moves").text_content()
+    page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
     page.wait_for_timeout(200)
     assert len(engine_requests) == requests_after_searching_both_positions
     assert len(maia_requests) == maia_requests_after_searching_both_positions

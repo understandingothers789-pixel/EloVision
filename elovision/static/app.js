@@ -52,6 +52,20 @@ function alert(message = "") {
   $("alert").textContent = message;
   $("alert").hidden = !message;
 }
+function readMaiaCache(data) {
+  const key = JSON.stringify(data);
+  if (!state.maiaCache.has(key)) return null;
+  const cached = state.maiaCache.get(key);
+  state.maiaCache.delete(key);
+  state.maiaCache.set(key, cached);
+  return {
+    ...structuredClone(cached),
+    predictions: cached.predictions.map((prediction) => ({
+      ...structuredClone(prediction),
+      cached: true,
+    })),
+  };
+}
 async function api(path, data, signal) {
   if (preview) {
     if (path === "health") return { loaded: false, installed: false };
@@ -74,14 +88,9 @@ async function api(path, data, signal) {
     );
   }
   const cacheKey = path === "analyze" ? JSON.stringify(data) : null;
-  if (cacheKey && state.maiaCache.has(cacheKey)) {
-    const cached = state.maiaCache.get(cacheKey);
-    state.maiaCache.delete(cacheKey);
-    state.maiaCache.set(cacheKey, cached);
-    return {
-      ...structuredClone(cached),
-      predictions: cached.predictions.map((prediction) => ({ ...structuredClone(prediction), cached: true })),
-    };
+  if (cacheKey) {
+    const cached = readMaiaCache(data);
+    if (cached) return cached;
   }
   const response = await fetch(
     localUrl(`api/v1/${path}`),
@@ -330,6 +339,9 @@ async function importPgn(text) {
 }
 function scheduleAnalysis(delay = 0) {
   if (!state.position) return;
+  const cachedMaia = !preview && state.mode !== "stockfish"
+    ? readMaiaCache(analysisRequest())
+    : null;
   hideMoveInspector();
   if (state.chartFen !== state.position.fen) {
     state.hiddenChartMoves.clear();
@@ -368,11 +380,18 @@ function scheduleAnalysis(delay = 0) {
     loadRatingComparisonChart(revision);
     return;
   }
-  $("loading").hidden = state.mode === "dual";
-  $("analysis-indicator").textContent = "ANALYZING";
+  $("loading").hidden = state.mode === "dual" || Boolean(cachedMaia);
+  $("analysis-indicator").textContent = cachedMaia ? "CACHED" : "ANALYZING";
   $("probability-total").textContent = "Full legal policy · No sampling";
+  if (cachedMaia) {
+    state.predictions = cachedMaia.predictions;
+    renderPredictions();
+    setExportButtonsDisabled(false);
+    $("model-status").textContent = "Ready · CPU · Offline";
+    if (state.mode === "dual") loadRatingComparisonChart(revision);
+  }
   state.timer = setTimeout(() => {
-    analyze(revision);
+    if (!cachedMaia) analyze(revision);
     if (state.mode === "dual" && state.stockfishAvailable && !state.stockfish)
       analyzeStockfish();
   }, delay);
