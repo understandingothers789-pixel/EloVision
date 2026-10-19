@@ -304,11 +304,11 @@
           </div>
           <section id="analysis-options" class="analysis-options" aria-label="Analysis settings">
             <div class="settings-tabs" role="tablist" aria-label="Analysis settings tabs">
-              <button id="settings-tab-engine" class="settings-tab" role="tab" aria-selected="false" aria-controls="settings-panel-engine" data-settings-tab="engine">Engine</button>
-              <button id="settings-tab-options" class="settings-tab active" role="tab" aria-selected="true" aria-controls="settings-panel-options" data-settings-tab="options">Options</button>
+              <button id="settings-tab-engine" class="settings-tab active" role="tab" aria-selected="true" aria-controls="settings-panel-engine" data-settings-tab="engine">Engine</button>
+              <button id="settings-tab-options" class="settings-tab" role="tab" aria-selected="false" aria-controls="settings-panel-options" data-settings-tab="options">Maia Options</button>
               <button id="settings-tab-export" class="settings-tab" role="tab" aria-selected="false" aria-controls="settings-panel-export" data-settings-tab="export">Export</button>
             </div>
-            <section id="settings-panel-engine" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-engine" hidden>
+            <section id="settings-panel-engine" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-engine">
               <div class="dual-toolbar engine-toolbar">
                 <label>MultiPV<select id="stockfish-lines-count"><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option><option value="5" selected>5 lines</option></select></label>
                 <label>Hash (GB)<input id="stockfish-hash" type="number" min="1" max="64" step="1" value="8" inputmode="numeric" /></label>
@@ -331,7 +331,7 @@
                 </div>
               </details>
             </section>
-            <section id="settings-panel-options" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-options">
+            <section id="settings-panel-options" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-options" hidden>
               <div id="analysis-control-slot"></div>
               <div class="dual-toolbar options-toolbar">
                 <label>Human moves<select id="move-limit"><option value="5">Top 5</option><option value="8">Top 8</option><option value="12">Top 12</option><option value="all">All legal moves</option></select></label>
