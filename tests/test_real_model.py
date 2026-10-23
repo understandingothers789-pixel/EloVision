@@ -70,10 +70,10 @@ def test_available_gpu_inference_matches_cpu_probabilities():
         cpu_probabilities = {move["uci"]: move["probability"] for move in cpu_result["moves"]}
         gpu_probabilities = {move["uci"]: move["probability"] for move in gpu_result["moves"]}
         assert gpu_probabilities.keys() == cpu_probabilities.keys()
-        assert max(
-            abs(gpu_probabilities[uci] - cpu_probabilities[uci])
-            for uci in cpu_probabilities
-        ) <= 1e-6
+        assert (
+            max(abs(gpu_probabilities[uci] - cpu_probabilities[uci]) for uci in cpu_probabilities)
+            <= 1e-6
+        )
     finally:
         cpu.close()
         gpu.close()

@@ -16,6 +16,7 @@ def resolve_device(torch_module, requested="auto"):
             try:
                 count = torch_module.cuda.device_count()
                 if count > 1:
+
                     def priority(index):
                         properties = torch_module.cuda.get_device_properties(index)
                         # A Ryzen iGPU may be enumerated before the discrete Radeon.

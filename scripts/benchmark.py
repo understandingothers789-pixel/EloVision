@@ -32,8 +32,10 @@ def benchmark(device, repeats):
         sync(actual_device)
 
         board = chess.Board()
+
         def predict(ratings):
             return policy.predict(board, ratings)
+
         for _ in range(5):
             predict([(1600, 1600)])
         sync(actual_device)

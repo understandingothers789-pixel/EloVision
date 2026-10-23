@@ -41,8 +41,14 @@ def python_for(name):
 
 def run(args, *, capture=False, timeout=None, env=None):
     return subprocess.run(
-        [str(arg) for arg in args], cwd=ROOT, check=True, timeout=timeout,
-        text=True, encoding="utf-8", errors="replace", env=env,
+        [str(arg) for arg in args],
+        cwd=ROOT,
+        check=True,
+        timeout=timeout,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
     )
@@ -51,11 +57,17 @@ def run(args, *, capture=False, timeout=None, env=None):
 def windows_adapters():
     """No WMIC dependency; Windows 11 includes PowerShell and CIM."""
     result = run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-         "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-         "@(Get-CimInstance Win32_VideoController -ErrorAction Stop | "
-         "Select-Object -ExpandProperty Name) | ConvertTo-Json -Compress"],
-        capture=True, timeout=20,
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "@(Get-CimInstance Win32_VideoController -ErrorAction Stop | "
+            "Select-Object -ExpandProperty Name) | ConvertTo-Json -Compress",
+        ],
+        capture=True,
+        timeout=20,
     )
     names = json.loads(result.stdout.lstrip("\ufeff"))
     if isinstance(names, str):
@@ -88,12 +100,15 @@ def nvidia_cuda_build():
     try:
         output = run(
             ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
-            capture=True, timeout=20,
+            capture=True,
+            timeout=20,
         ).stdout
         lines = [line.strip() for line in output.splitlines() if line.strip()]
-        if lines and all(re.fullmatch(r"\d+\.\d+", line) for line in lines) and max(
-            float(line) for line in lines
-        ) < 10:
+        if (
+            lines
+            and all(re.fullmatch(r"\d+\.\d+", line) for line in lines)
+            and max(float(line) for line in lines) < 10
+        ):
             return "cu126"
     except (OSError, subprocess.SubprocessError):
         pass
@@ -173,8 +188,11 @@ def real_probe(device, *, target=None, full=False, requested="auto"):
 
     gpu = device in {"amd", "nvidia"}
     selected = (
-        rocm_device(torch, target) if device == "amd"
-        else nvidia_device(torch) if device == "nvidia" else "cpu"
+        rocm_device(torch, target)
+        if device == "amd"
+        else nvidia_device(torch)
+        if device == "nvidia"
+        else "cpu"
     )
     if gpu and requested.startswith("cuda"):
         selected = f"cuda:{torch.cuda.current_device()}" if requested == "cuda" else requested
@@ -193,26 +211,32 @@ def real_probe(device, *, target=None, full=False, requested="auto"):
             torch.cuda.reset_peak_memory_stats(selected)
         for board in boards:
             request = PredictionRequest(
-                board.fen(en_passant="fen"), initial_fen=board.root().fen(),
+                board.fen(en_passant="fen"),
+                initial_fen=board.root().fen(),
                 moves=tuple(move.uci() for move in board.move_stack),
             )
             pairs = [(600, 600), (1800, 1800), (2600, 2600)] if full else [(1800, 1800)]
             for result in service.predict_many(request, pairs):
                 if gpu and result["model"]["device"] != selected:
                     raise RuntimeError(f"Maia did not actually infer on the {device.upper()} GPU.")
-                positions.append({
-                    "fen": request.fen,
-                    "ratings": [result["player_elo"], result["opponent_elo"]],
-                    "probabilities": {m["uci"]: m["probability"] for m in result["moves"]},
-                })
+                positions.append(
+                    {
+                        "fen": request.fen,
+                        "ratings": [result["player_elo"], result["opponent_elo"]],
+                        "probabilities": {m["uci"]: m["probability"] for m in result["moves"]},
+                    }
+                )
         if gpu:
             torch.cuda.synchronize(selected)
         metadata = service.policy.metadata
         report = {
-            "python": sys.version.split()[0], "executable": sys.executable,
-            "torch": str(torch.__version__), "rocm": torch.version.hip,
+            "python": sys.version.split()[0],
+            "executable": sys.executable,
+            "torch": str(torch.__version__),
+            "rocm": torch.version.hip,
             "cuda": torch.version.cuda,
-            "device": metadata["device"], "device_label": metadata["device_label"],
+            "device": metadata["device"],
+            "device_label": metadata["device_label"],
             "weights_sha256": metadata["weights_sha256"],
             "elapsed_seconds_including_load": time.perf_counter() - started,
             "peak_allocated_vram_mb": (
@@ -282,14 +306,15 @@ def install():
     (CACHE / f"{vendor}-maia-check.json").unlink(missing_ok=True)
     reference = CACHE / "cpu-maia-reference.json"
     # A failed mandatory CPU baseline must not be described as successful CPU setup.
-    run([cpu, "-m", "elovision.windows_runtime", "probe", "--device", "cpu",
-         "--output", reference], timeout=240)
+    run(
+        [cpu, "-m", "elovision.windows_runtime", "probe", "--device", "cpu", "--output", reference],
+        timeout=240,
+    )
     try:
         if not gpu.exists():
             run([cpu, "-m", "venv", ROOT / f".venv-{vendor}"])
         run([gpu, "-m", "pip", "install", "--upgrade", "pip"])
-        run([gpu, "-m", "pip", "install", "--index-url", index,
-             "--only-binary=torch", package])
+        run([gpu, "-m", "pip", "install", "--index-url", index, "--only-binary=torch", package])
         # Exact constraint prevents editable installation from replacing GPU Torch with PyPI Torch.
         version = run([gpu, "-c", "import torch; print(torch.__version__)"], capture=True).stdout
         constraint = CACHE / f"{vendor}-torch-constraint.txt"
@@ -297,9 +322,22 @@ def install():
         run([gpu, "-m", "pip", "install", "-c", constraint, "-e", "."])
         run([gpu, "-m", "pip", "check"])
         target_args = ["--target", target] if target else []
-        run([gpu, "-m", "elovision.windows_runtime", "probe", "--device", vendor,
-             *target_args, "--output", CACHE / f"{vendor}-maia-check.json",
-             "--reference", reference], timeout=300)
+        run(
+            [
+                gpu,
+                "-m",
+                "elovision.windows_runtime",
+                "probe",
+                "--device",
+                vendor,
+                *target_args,
+                "--output",
+                CACHE / f"{vendor}-maia-check.json",
+                "--reference",
+                reference,
+            ],
+            timeout=300,
+        )
         packages = run([gpu, "-m", "pip", "freeze"], capture=True).stdout
         (CACHE / f"{vendor}-packages.txt").write_text(packages, encoding="utf-8")
         write_json(CACHE / f"{vendor}-install.json", {"target": target, "name": name})
@@ -341,9 +379,18 @@ def start():
             with tempfile.TemporaryDirectory(prefix="elovision-start-") as directory:
                 marker = Path(directory) / "ready.json"
                 result = subprocess.run(
-                    [str(gpu), "-m", "elovision.windows_runtime", f"serve-{vendor}",
-                     *target_args, "--output", str(marker),
-                     "--gpu-device", requested], cwd=ROOT,
+                    [
+                        str(gpu),
+                        "-m",
+                        "elovision.windows_runtime",
+                        f"serve-{vendor}",
+                        *target_args,
+                        "--output",
+                        str(marker),
+                        "--gpu-device",
+                        requested,
+                    ],
+                    cwd=ROOT,
                 )
                 if marker.exists() and result.returncode == 0:
                     return result.returncode
@@ -362,7 +409,8 @@ def start():
         print("Starting default Python environment (CPU fallback, or existing CUDA).", flush=True)
     return subprocess.call(
         [str(python_for(".venv")), "-m", "elovision", "serve", "--open"],
-        cwd=ROOT, env=environment,
+        cwd=ROOT,
+        env=environment,
     )
 
 
@@ -417,9 +465,17 @@ def diagnose():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=[
-        "install", "start", "diagnose", "probe", "serve-amd", "serve-nvidia",
-    ])
+    parser.add_argument(
+        "command",
+        choices=[
+            "install",
+            "start",
+            "diagnose",
+            "probe",
+            "serve-amd",
+            "serve-nvidia",
+        ],
+    )
     parser.add_argument("--device", choices=["cpu", "amd", "nvidia"], default="cpu")
     parser.add_argument("--target")
     parser.add_argument("--gpu-device", default="auto")

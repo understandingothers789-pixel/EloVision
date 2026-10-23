@@ -29,9 +29,10 @@ def test_auto_selects_torch_gpu_api_for_rocm_and_cuda(torch):
 
 def test_auto_falls_back_to_cpu_if_no_gpu_or_device_discovery_fails():
     assert resolve_device(torch_stub(available=False), "auto") == "cpu"
-    assert resolve_device(
-        torch_stub(available=False, discovery_error=RuntimeError("driver")), "auto"
-    ) == "cpu"
+    assert (
+        resolve_device(torch_stub(available=False, discovery_error=RuntimeError("driver")), "auto")
+        == "cpu"
+    )
 
 
 def test_explicit_missing_gpu_request_fails_actionably():

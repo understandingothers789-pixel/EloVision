@@ -46,7 +46,8 @@ def build_preview(output: Path) -> Path:
         '<script src="./app.js" type="module"></script>': inline_script,
         '<script src="./layout.js" type="module"></script>': (
             "<script>document.addEventListener('DOMContentLoaded', () => {\n"
-            + layout_script + "\n});</script>"
+            + layout_script
+            + "\n});</script>"
         ),
         'href="./favicon.svg"': f'href="{data_uri(STATIC / "favicon.svg")}"',
         'href="./docs"': 'href="https://github.com/understandingothers789-pixel/'
