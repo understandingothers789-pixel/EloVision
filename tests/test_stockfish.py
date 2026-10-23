@@ -31,17 +31,24 @@ for raw in sys.stdin:
         with open(os.environ["ELOVISION_TEST_UCI_LOG"], "a", encoding="utf-8") as log:
             log.write(line + "\\n")
     elif line.startswith("go "):
+        with open(os.environ["ELOVISION_TEST_UCI_LOG"], "a", encoding="utf-8") as log:
+            log.write(line + "\\n")
         moves = (
             "e2e4", "d2d4", "g1f3", "b1c3", "b1a3", "g1h3", "a2a3", "a2a4",
             "b2b3", "b2b4", "c2c3", "c2c4", "d2d3", "e2e3", "f2f3", "f2f4",
             "g2g3", "g2g4", "h2h3", "h2h4",
         )
         scores = (35, 21, 12, 10, 9, 8)
+        if "searchmoves" in line:
+            roots = line.split("searchmoves", 1)[1].split()
+            moves = tuple(move for move in moves if move in roots)
         for index, move in enumerate(moves[:multipv], 1):
             score = scores[index - 1] if index <= len(scores) else 5
-            pv = "e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7 f1e1" if index == 1 else move
+            pv = move
+            if move == "e2e4":
+                pv = "e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7 f1e1"
             print(f"info depth 16 multipv {{index}} score cp {{score}} pv {{pv}}", flush=True)
-        print("bestmove e2e4", flush=True)
+        print(f"bestmove {{moves[0]}}", flush=True)
     elif line == "quit":
         break
 """.encode()
@@ -74,7 +81,17 @@ def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
         assert [line["san"] for line in result["lines"][:3]] == ["e4", "d4", "Nf3"]
         assert [line["score"] for line in result["lines"][:3]] == ["+0.35", "+0.21", "+0.12"]
         assert result["lines"][0]["pv"] == [
-            "e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1"
+            "e4",
+            "e5",
+            "Nf3",
+            "Nc6",
+            "Bb5",
+            "a6",
+            "Ba4",
+            "Nf6",
+            "O-O",
+            "Be7",
+            "Re1",
         ]
         assert result["channel"] == "official19"
         configured = uci_log.read_text(encoding="utf-8")
@@ -86,14 +103,45 @@ def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
         )
         assert wide.status_code == 200, wide.text
         assert len(wide.json()["lines"]) == 5
-        assert client.post(
+        assert (
+            client.post(
+                "/api/v1/engine/analyze",
+                json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 6},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/api/v1/engine/analyze",
+                json={"fen": chess.STARTING_FEN, "depth": 41, "multipv": 5},
+            ).status_code
+            == 422
+        )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The protocol fixture uses a Unix executable script.")
+def test_stockfish_searches_requested_maia_move_and_rejects_illegal_roots(tmp_path, monkeypatch):
+    service = StockfishService(tmp_path / ".engines")
+    uci_log = tmp_path / "uci.log"
+    monkeypatch.setenv("ELOVISION_TEST_UCI_LOG", str(uci_log))
+    service.install("stockfish.bin", FAKE_STOCKFISH)
+    with TestClient(create_app(stockfish_service=service)) as client:
+        response = client.post(
             "/api/v1/engine/analyze",
-            json={"fen": chess.STARTING_FEN, "depth": 16, "multipv": 6},
-        ).status_code == 422
-        assert client.post(
-            "/api/v1/engine/analyze",
-            json={"fen": chess.STARTING_FEN, "depth": 41, "multipv": 5},
-        ).status_code == 422
+            json={"fen": chess.STARTING_FEN, "root_moves": ["b1c3"], "multipv": 5},
+        )
+        assert response.status_code == 200, response.text
+        lines = response.json()["lines"]
+        assert len(lines) == 1
+        assert lines[0]["uci"] == "b1c3"
+        assert lines[0]["pv"] == ["Nc3"]
+        assert "searchmoves b1c3" in uci_log.read_text()
+        for roots in [[], ["e2e5"], ["not-uci"], ["e2e4", "e2e4"], ["e2e4\nquit"]]:
+            invalid = client.post(
+                "/api/v1/engine/analyze",
+                json={"fen": chess.STARTING_FEN, "root_moves": roots},
+            )
+            assert invalid.status_code == 422, (roots, invalid.text)
 
 
 def test_new_stockfish_request_stops_search_and_keeps_best_so_far(tmp_path, monkeypatch):

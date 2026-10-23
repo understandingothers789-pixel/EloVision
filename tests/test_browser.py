@@ -163,9 +163,12 @@ def test_maia_explorer_matches_analysis_layout_and_keeps_board_in_view(page):
         "element => element.classList.contains('analysis-layout') && "
         "element.classList.contains('explorer-layout')"
     )
-    assert page.locator("body").evaluate(
-        "element => getComputedStyle(element).getPropertyValue('--bg').trim()"
-    ) == analysis_background
+    assert (
+        page.locator("body").evaluate(
+            "element => getComputedStyle(element).getPropertyValue('--bg').trim()"
+        )
+        == analysis_background
+    )
     board = page.locator("#board").bounding_box()
     assert board is not None
     assert board["y"] + board["height"] <= 900
@@ -438,15 +441,19 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator("#stockfish-depth").input_value() == "20"
     assert page.locator("#stockfish-lines-count option").count() == 5
     assert page.locator("#stockfish-depth option").all_text_contents() == [
-        "10", "15", "20", "25", "30", "35", "40"
+        "10",
+        "15",
+        "20",
+        "25",
+        "30",
+        "35",
+        "40",
     ]
     assert page.locator("#stockfish-hash").input_value() == "8"
     assert page.locator("#stockfish-threads").input_value() == "14"
     assert page.locator("#dual-results .dual-column").count() == 2
     page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
-    page.locator("#maia-warmup-status").filter(
-        has_text="Maia ready · 34 positions"
-    ).wait_for()
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready · 34 positions").wait_for()
     assert engine_requested == []
     page.locator("#whole-game-analyze").wait_for(state="visible")
     expect(page.locator("#whole-game-analyze")).to_be_enabled()
@@ -457,7 +464,8 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     page.locator("#whole-game-status").filter(has_text="Maia cached 34").wait_for()
     page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
     whole_game_maia = [
-        request for request in requested
+        request
+        for request in requested
         if len(request.get("matchups", [])) == 1 and "initial_fen" in request
     ]
     assert {len(request["moves"]) for request in whole_game_maia} == set(range(34))
@@ -474,9 +482,9 @@ def test_browser_switches_between_dual_and_pure_stockfish_views(page):
     assert page.locator('.rating-chart-line[data-uci="e2e4"]').count() == 1
     assert "Stockfish prefers" in page.locator("#comparison-summary").text_content()
     assert "moves-disagree" in page.locator("#comparison-summary").get_attribute("class")
-    assert "TOP MOVES DIFFER" in page.locator(
-        "#comparison-summary .comparison-label"
-    ).text_content()
+    assert (
+        "TOP MOVES DIFFER" in page.locator("#comparison-summary .comparison-label").text_content()
+    )
     page.locator(".rating-chart-dot").first.focus()
     assert "400 vs. 400 Elo" in page.locator(".rating-chart-tooltip").text_content()
     assert "5.00%" in page.locator(".rating-chart-tooltip").text_content()
@@ -850,16 +858,16 @@ def test_stockfish_results_return_from_cache_when_navigating_back(page):
     page.goto(BASE_URL)
     page.locator("#sample").click()
     expect(page.locator("#next")).to_be_enabled()
-    page.locator("#maia-warmup-status").filter(
-        has_text="Maia ready · 34 positions"
-    ).wait_for()
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready · 34 positions").wait_for()
     page.locator("#dual-human-moves .comparison-move").first.wait_for()
     page.locator("#settings-tab-engine").click()
     page.locator("#stockfish-analyze").click()
     page.locator("#stockfish-results .stockfish-line").filter(has_text="+0.11").wait_for()
+
     def maia_position_requests():
         return [
-            request for request in maia_requests
+            request
+            for request in maia_requests
             if "initial_fen" in request and len(request.get("matchups", [])) == 1
         ]
 
@@ -919,8 +927,7 @@ def test_selecting_another_pgn_stops_old_whole_game_analysis(page):
         data = json.loads(route.request.post_data)
         board = chess.Board(data["fen"])
         pairs = data.get("matchups") or [
-            {"player_elo": rating, "opponent_elo": rating}
-            for rating in data.get("ratings", [1800])
+            {"player_elo": rating, "opponent_elo": rating} for rating in data.get("ratings", [1800])
         ]
         route.fulfill(
             json={
@@ -1005,8 +1012,7 @@ def test_maia_cache_is_reused_after_switching_between_pgn_games(page):
         maia_requests.append(data)
         board = chess.Board(data["fen"])
         pairs = data.get("matchups") or [
-            {"player_elo": rating, "opponent_elo": rating}
-            for rating in data.get("ratings", [1800])
+            {"player_elo": rating, "opponent_elo": rating} for rating in data.get("ratings", [1800])
         ]
         route.fulfill(
             json={
@@ -1287,16 +1293,20 @@ def test_layout_drag_resize_persist_and_keep_navigation_on_the_board(page):
     unit = page.locator(".workspace").bounding_box()["width"] / 24
     below_board = layout_preferences(page)["panels"]["board"]["h"] + 2
     drag_layout_control(
-        page, page.get_by_role("button", name="Move Game notebook", exact=True),
-        unit * 7, 16 * below_board,
+        page,
+        page.get_by_role("button", name="Move Game notebook", exact=True),
+        unit * 7,
+        16 * below_board,
     )
     moved = layout_preferences(page)["panels"]
     assert moved["game"]["x"] == 7 and moved["game"]["y"] >= 52
     assert moved["game"]["y"] >= moved["board"]["y"] + moved["board"]["h"]
     before = moved["board"]
     drag_layout_control(
-        page, page.get_by_role("button", name="Resize Chessboard se", exact=True),
-        -unit * 2, -16 * 6,
+        page,
+        page.get_by_role("button", name="Resize Chessboard se", exact=True),
+        -unit * 2,
+        -16 * 6,
     )
     after = layout_preferences(page)["panels"]["board"]
     assert after["w"] == before["w"] - 2
@@ -1319,8 +1329,9 @@ def test_layout_drag_resize_persist_and_keep_navigation_on_the_board(page):
 def test_layout_presets_reset_and_independent_workspace_preferences(page):
     page.goto(BASE_URL)
     page.locator("#layout-preset").select_option("notebook")
-    assert page.locator(".game-panel").bounding_box()["y"] > (
-        page.locator(".board-panel").bounding_box()["y"]
+    assert (
+        page.locator(".game-panel").bounding_box()["y"]
+        > (page.locator(".board-panel").bounding_box()["y"])
     )
     analysis = layout_preferences(page)
     page.locator("#workspace-explorer").click()
@@ -1378,8 +1389,10 @@ def test_layout_all_resize_edges_and_corners_keep_panels_separate(page):
         dx = unit if "w" in edge else -unit if "e" in edge else 0
         dy = 32 if "n" in edge else -32 if "s" in edge else 0
         drag_layout_control(
-            page, page.get_by_role("button", name=f"Resize Chessboard {edge}", exact=True),
-            dx, dy,
+            page,
+            page.get_by_role("button", name=f"Resize Chessboard {edge}", exact=True),
+            dx,
+            dy,
         )
         rects = layout_preferences(page)["panels"]
         assert rects["board"]["w"] == before["w"] - int(bool(dx))
@@ -1388,8 +1401,12 @@ def test_layout_all_resize_edges_and_corners_keep_panels_separate(page):
             for second, b in rects.items():
                 if first == second:
                     continue
-                assert not (a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
-                            and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"])
+                assert not (
+                    a["x"] < b["x"] + b["w"]
+                    and b["x"] < a["x"] + a["w"]
+                    and a["y"] < b["y"] + b["h"]
+                    and b["y"] < a["y"] + a["h"]
+                )
 
 
 def test_layout_narrow_screen_restores_live_panels_without_losing_preferences(page):
@@ -1445,13 +1462,27 @@ def test_layout_keeps_live_rating_graph_in_sf_only_without_restarting_analysis(p
         matchups = data.get("matchups") or [
             {"player_elo": rating, "opponent_elo": rating} for rating in data["ratings"]
         ]
-        route.fulfill(json={"predictions": [
-            {**pair, "moves": [
-                {"uci": move.uci(), "san": board.san(move), "rank": i + 1,
-                 "probability": 1 / len(moves)} for i, move in enumerate(moves)
-            ], "probability_sum": 1, "model": {"id": "layout-browser-fixture"}}
-            for pair in matchups
-        ]})
+        route.fulfill(
+            json={
+                "predictions": [
+                    {
+                        **pair,
+                        "moves": [
+                            {
+                                "uci": move.uci(),
+                                "san": board.san(move),
+                                "rank": i + 1,
+                                "probability": 1 / len(moves),
+                            }
+                            for i, move in enumerate(moves)
+                        ],
+                        "probability_sum": 1,
+                        "model": {"id": "layout-browser-fixture"},
+                    }
+                    for pair in matchups
+                ]
+            }
+        )
 
     page.route("**/api/v1/analyze", fixture)
     page.goto(BASE_URL)
@@ -1508,3 +1539,191 @@ def test_board_focus_uses_desktop_space_and_keeps_statistics_optional(page):
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.locator("#layout-reset").click()
     assert page.locator("#board-insight").is_visible()
+
+
+def route_maia_continuation_fixtures(page):
+    """Synthetic probabilities and legal PVs for UI checks, never neural inference."""
+    requests = []
+
+    def maia(route):
+        data = route.request.post_data_json
+        board = chess.Board(data["fen"])
+        preferred = ["e2e4", "d2d4", "c2c4", "g1f3", "b1c3"]
+        legal = sorted(
+            board.legal_moves,
+            key=lambda move: preferred.index(move.uci()) if move.uci() in preferred else 99,
+        )
+        moves = [
+            {"uci": move.uci(), "san": board.san(move), "rank": i, "probability": 1 / len(legal)}
+            for i, move in enumerate(legal, 1)
+        ]
+        pairs = data.get("matchups", [{"player_elo": 1800, "opponent_elo": 1800}])
+        route.fulfill(json={"predictions": [{**pair, "moves": moves} for pair in pairs]})
+
+    def engine(route):
+        data = route.request.post_data_json
+        requests.append(data)
+        board = chess.Board(data["fen"])
+        roots = data.get("root_moves") or (
+            ["g1f3", "b1c3"]
+            if board.turn == chess.WHITE and board.fullmove_number == 1
+            else [move.uci() for move in list(board.legal_moves)[:2]]
+        )
+        lines = []
+        for rank, uci in enumerate(roots, 1):
+            copy = board.copy()
+            move = chess.Move.from_uci(uci)
+            san = copy.san(move)
+            copy.push(move)
+            pv = [san]
+            if copy.legal_moves.count():
+                pv.append(copy.san(next(iter(copy.legal_moves))))
+            lines.append(
+                {
+                    "rank": rank,
+                    "uci": uci,
+                    "san": san,
+                    "score": "+0.25",
+                    "score_cp": 25,
+                    "mate": None,
+                    "pv": pv,
+                    "depth": data["depth"],
+                }
+            )
+        route.fulfill(
+            json={"engine": "Stockfish 19 fixture", "depth": data["depth"], "lines": lines}
+        )
+
+    page.route("**/api/v1/analyze", maia)
+    page.route(
+        "**/api/v1/engine/status",
+        lambda route: route.fulfill(
+            json={"available": True, "name": "Stockfish 19 fixture", "channel": "official19"}
+        ),
+    )
+    page.route("**/api/v1/engine/analyze", engine)
+    page.route("**/api/v1/engine/cancel", lambda route: route.fulfill(json={"cancelled": True}))
+    return requests
+
+
+def test_maia_continuations_search_missing_moves_and_preserve_independent_sf_cache(page):
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    requests = route_maia_continuation_fixtures(page)
+    page.goto(BASE_URL)
+    page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready").wait_for()
+    panel = page.locator("#maia-lines-panel")
+    expect(panel).to_be_visible()
+    assert not panel.evaluate("element => element.open")
+    page.locator('#dual-human-moves .comparison-move[data-uci="c2c4"]').click()
+    expect(page.locator('.maia-line[data-uci="c2c4"]')).to_have_attribute("open", "")
+    assert panel.evaluate("element => element.open")
+    panel.locator(":scope > summary").click()
+    panel.locator(":scope > summary").click()
+    assert requests == []  # Opening the panel never starts Stockfish automatically.
+    page.locator("#stockfish-analyze").click()
+    page.locator("#stockfish-results .stockfish-line").nth(1).wait_for()
+    assert len(requests) == 1
+    # The engine's own two favorites overlap two of Maia's five choices.
+    expect(page.locator("#maia-lines-count")).to_have_text("2/5 searched")
+    engine_line = page.locator("#stockfish-results .stockfish-line").first
+    engine_line.click()
+    expect(engine_line.locator(".engine-pv")).to_be_visible()
+    expect(engine_line).to_have_attribute("aria-expanded", "true")
+    assert "1." in engine_line.locator(".engine-pv").text_content()
+    engine_line.click()
+    expect(engine_line.locator(".engine-pv")).to_be_hidden()
+    page.locator("#maia-lines-analyze").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("5/5 searched")
+    assert len(requests) == 4
+    roots = [item["root_moves"][0] for item in requests if "root_moves" in item]
+    assert roots == ["e2e4", "d2d4", "c2c4"]
+    assert all(item["multipv"] == 1 for item in requests if "root_moves" in item)
+    assert page.locator("#stockfish-results .stockfish-line").count() == 2
+    assert page.locator("#sf-gauge-marker").text_content() == "+0.25"
+    row = page.locator('.maia-line[data-uci="c2c4"]')
+    expect(row.locator(".maia-line-pv")).to_contain_text("1. c4")
+    expect(row.locator(".maia-line-eval")).to_have_text("+0.25 · d20")
+    page.locator("#view-stockfish").click()
+    expect(panel).to_be_hidden()
+    expect(page.locator(".rating-chart-panel")).to_be_visible()
+    page.locator("#view-dual").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("5/5 searched")
+    expect(page.locator('.maia-line[data-uci="c2c4"]')).to_have_attribute("open", "")
+    page.locator("#next").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("0/5 searched")
+    page.locator("#prev").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("5/5 searched")
+    assert len(requests) == 4
+    # A different MultiPV must not reuse results from another search configuration.
+    page.locator("#stockfish-lines-count").select_option("3")
+    expect(page.locator("#maia-lines-count")).to_have_text("2/5 searched")
+    assert len(requests) == 5
+    page.locator("#next").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("0/5 searched")
+    page.locator(".maia-line > summary").first.click()
+    page.locator(".maia-line > button").first.click()
+    expect(page.locator("#maia-lines-count")).to_have_text("1/5 searched")
+    expect(page.locator(".maia-line-pv").first).to_contain_text("1…")
+    expect(page.locator(".maia-line-pv").first).to_contain_text("2.")
+    page.locator("#view-stockfish").click()
+    for width in [1440, 390]:
+        page.set_viewport_size({"width": width, "height": 900})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not errors
+
+
+def test_maia_continuations_stop_on_navigation_and_cache_the_completed_line(page):
+    requests = route_maia_continuation_fixtures(page)
+    page.add_init_script("""(() => {
+      const original = window.fetch.bind(window);
+      window.__releaseLine = null;
+      const gate = new Promise(resolve => { window.__releaseLine = resolve; });
+      let held = false;
+      window.fetch = async (input, options) => {
+        const response = await original(input, options);
+        if (!held && String(input).includes('/api/v1/engine/analyze') &&
+            JSON.parse(options.body).root_moves) {
+          held = true;
+          await gate;
+        }
+        return response;
+      };
+    })();""")
+    page.goto(BASE_URL)
+    page.locator("#pgn-file").set_input_files("samples/opera-game.pgn")
+    page.locator("#maia-warmup-status").filter(has_text="Maia ready").wait_for()
+    page.locator("#maia-lines-panel > summary").click()
+    page.locator("#maia-lines-analyze").click()
+    expect(page.locator("#maia-lines-status")).to_contain_text("Searching e4")
+    page.locator("#next").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("0/5 searched")
+    page.evaluate("window.__releaseLine()")
+    page.wait_for_function(
+        """() => document.getElementById('maia-lines-analyze').textContent !== 'Cancel search'"""
+    )
+    page.locator("#prev").click()
+    expect(page.locator("#maia-lines-count")).to_have_text("1/5 searched")
+    assert len(requests) == 1
+    assert requests[0]["root_moves"] == ["e2e4"]
+
+
+def test_maia_continuation_error_stays_in_its_panel_and_can_be_retried(page):
+    requests = route_maia_continuation_fixtures(page)
+    page.goto(BASE_URL)
+    page.locator("#maia-lines-panel > summary").click()
+    page.locator("#stockfish-analyze").click()
+    page.locator("#stockfish-results .stockfish-line").first.wait_for()
+    page.route(
+        "**/api/v1/engine/analyze",
+        lambda route: route.fulfill(
+            status=503, json={"error": {"message": "Fixture engine stopped"}}
+        ),
+    )
+    page.locator("#maia-lines-analyze").click()
+    expect(page.locator("#maia-lines-status")).to_have_text("Fixture engine stopped")
+    assert len(requests) == 1
+    expect(page.locator("#stockfish-results .stockfish-line").first).to_be_visible()
+    expect(page.locator(".rating-chart-panel")).to_be_visible()
+    expect(page.locator("#maia-lines-analyze")).to_be_enabled()

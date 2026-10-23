@@ -35,6 +35,13 @@ const state = {
   stockfishInFlight: null,
   stockfishInFlightKey: null,
   stockfishRequestToken: null,
+  maiaLineRun: null,
+  maiaLineAction: 0,
+  maiaLineCancellation: Promise.resolve(),
+  maiaLineError: "",
+  maiaLineErrorKey: null,
+  maiaLineExpanded: new Set(),
+  maiaLinePositionKey: null,
   hoverMove: null,
   hiddenChartMoves: new Set(),
   selectedMove: null,
@@ -529,6 +536,8 @@ async function importPgn(text) {
 }
 function scheduleAnalysis(delay = 0, autoStockfishForNewMove = false) {
   if (!state.position) return;
+  if (state.maiaLinePositionKey !== stockfishRequestKey() || state.mode !== "dual")
+    cancelMaiaLines();
   const cachedMaia = !preview && state.mode !== "stockfish"
     ? readMaiaCache(analysisRequest())
     : null;
@@ -542,6 +551,7 @@ function scheduleAnalysis(delay = 0, autoStockfishForNewMove = false) {
   state.controller?.abort();
   state.chartController?.abort();
   state.predictions = [];
+  renderMaiaLines();
   if (state.mode === "dual") {
     state.ratingPredictions = [];
     $("rating-comparison-chart").replaceChildren(
@@ -776,8 +786,169 @@ function renderHumanComparison(prediction) {
       row.classList.add("is-played");
       row.setAttribute("aria-label", `${move.san}, played in game, ${pct(move.probability)}`);
     }
+    if (prediction.moves.slice(0, 5).some((candidate) => candidate.uci === move.uci)) {
+      row.title = "Click to inspect this move’s Stockfish continuation";
+      row.setAttribute("aria-controls", "maia-lines-panel");
+      row.addEventListener("click", () => {
+        hideMoveInspector();
+        state.maiaLineExpanded.add(move.uci);
+        $("maia-lines-panel").open = true;
+        renderMaiaLines();
+        const detail = $("maia-engine-lines").querySelector(`[data-uci="${move.uci}"]`);
+        const dock = $("maia-lines-panel").closest(".dock-content");
+        // Reveal the continuation within an arranged panel without moving the board.
+        if (detail && dock) {
+          const rect = detail.getBoundingClientRect();
+          const bounds = dock.getBoundingClientRect();
+          if (rect.bottom > bounds.bottom) dock.scrollTop += rect.bottom - bounds.bottom + 8;
+        }
+      });
+    }
     bindMoveInspection(row, move.uci);
     container.append(row);
+  }
+  renderMaiaLines();
+}
+function numberedVariation(pv) {
+  const fields = state.position.fen.split(" ");
+  const black = fields[1] === "b";
+  const start = Number(fields[5]) || 1;
+  return pv.map((san, index) => {
+    const ply = index + (black ? 1 : 0);
+    const number = start + Math.floor(ply / 2);
+    return ply % 2 === 0 ? `${number}. ${san}` : index === 0 ? `${number}… ${san}` : san;
+  }).join(" ");
+}
+function setVariationVisibility() {
+  const visible = $("show-variations").checked || state.mode === "stockfish";
+  const container = $("stockfish-results");
+  container.classList.toggle("show-variations", visible);
+  container.querySelectorAll(".stockfish-line").forEach((row) => {
+    row.classList.remove("expanded", "pv-collapsed");
+    row.setAttribute("aria-expanded", String(visible));
+  });
+}
+function maiaLineKey(uci, key = stockfishRequestKey()) {
+  // Restricted searches never replace the independent MultiPV result.
+  return `${key}|root:${uci}|multipv:1`;
+}
+function maiaEngineLine(uci) {
+  return state.stockfishCache.get(maiaLineKey(uci))?.lines?.find((line) => line.uci === uci)
+    || (state.stockfishPositionKey === stockfishRequestKey()
+      ? state.stockfish?.lines?.find((line) => line.uci === uci) : null);
+}
+function renderMaiaLines() {
+  const panel = $("maia-lines-panel");
+  const moves = state.predictions[0]?.moves?.slice(0, 5) || [];
+  panel.hidden = state.mode !== "dual" || !moves.length;
+  if (panel.hidden) return;
+  const key = stockfishRequestKey();
+  if (state.maiaLinePositionKey !== key) {
+    state.maiaLineExpanded.clear();
+    if (state.maiaLineErrorKey !== key) state.maiaLineError = "";
+    state.maiaLinePositionKey = key;
+  }
+  const container = $("maia-engine-lines");
+  container.replaceChildren();
+  let searched = 0;
+  for (const move of moves) {
+    const line = maiaEngineLine(move.uci);
+    if (line) searched += 1;
+    const detail = node("details", "maia-line");
+    detail.dataset.uci = move.uci;
+    detail.open = state.maiaLineExpanded.has(move.uci);
+    const summary = node("summary");
+    summary.append(node("strong", "", move.san), node("span", "", pct(move.probability)), node("span", "maia-line-eval", line ? `${line.score} · d${line.depth}` : "Not searched"));
+    bindMoveInspection(summary, move.uci);
+    detail.append(summary);
+    if (line) detail.append(node("p", "maia-line-pv", numberedVariation(line.pv)));
+    else {
+      const search = node("button", "text-button", "Search this move with SF");
+      search.type = "button";
+      search.disabled = !state.stockfishAvailable || Boolean(state.wholeGameController);
+      search.addEventListener("click", () => analyzeMaiaLines([move.uci]));
+      detail.append(search);
+    }
+    detail.addEventListener("toggle", () => {
+      if (!detail.isConnected) return;
+      if (detail.open) state.maiaLineExpanded.add(move.uci);
+      else state.maiaLineExpanded.delete(move.uci);
+    });
+    container.append(detail);
+  }
+  $("maia-lines-count").textContent = `${searched}/${moves.length} searched`;
+  const running = state.maiaLineRun;
+  const button = $("maia-lines-analyze");
+  button.textContent = running ? "Cancel search" : searched === moves.length ? "All lines available" : "Analyze missing moves";
+  button.disabled = !running && (!state.stockfishAvailable || Boolean(state.wholeGameController) || searched === moves.length);
+  $("maia-lines-status").textContent = running
+    ? `Searching ${running.san || "Maia choices"}…`
+    : state.maiaLineError || (state.wholeGameController ? "Whole-game analysis is running." : !state.stockfishAvailable ? "Choose an engine in the Engine tab." : "");
+}
+function cancelMaiaLines() {
+  state.maiaLineAction += 1;
+  const run = state.maiaLineRun;
+  if (run) {
+    state.maiaLineRun = null;
+    run.cancelled = true;
+    if (run.searching)
+      state.maiaLineCancellation = fetch(localUrl("api/v1/engine/cancel"), { method: "POST" }).catch(() => {});
+  }
+  return state.maiaLineCancellation;
+}
+async function analyzeMaiaLines(onlyMoves = null) {
+  if (!state.position || !state.stockfishAvailable || state.wholeGameController) return;
+  const wasRunning = Boolean(state.maiaLineRun);
+  const cancellation = cancelMaiaLines();
+  const action = state.maiaLineAction;
+  await cancellation;
+  if (action !== state.maiaLineAction) return;
+  if (wasRunning && !onlyMoves) { renderMaiaLines(); return; }
+  // Other actions may have run while cancellation reached the local engine.
+  if (!state.position || state.mode !== "dual" || state.wholeGameController) return;
+  const hash = Number($("stockfish-hash").value);
+  const threads = Number($("stockfish-threads").value);
+  if (!Number.isInteger(hash) || hash < 1 || hash > 64 || !Number.isInteger(threads) || threads < 1 || threads > 256) {
+    state.maiaLineError = "Check Hash (1–64 GB) and Threads (1–256) in the Engine tab.";
+    state.maiaLineErrorKey = stockfishRequestKey();
+    renderMaiaLines();
+    return;
+  }
+  const moves = (state.predictions[0]?.moves?.slice(0, 5) || [])
+    .filter((move) => (!onlyMoves || onlyMoves.includes(move.uci)) && !maiaEngineLine(move.uci));
+  const key = stockfishRequestKey();
+  const run = { key, cancelled: false, searching: false };
+  state.maiaLineRun = run;
+  state.maiaLineError = "";
+  const request = { ...payload(), depth: Number($("stockfish-depth").value), multipv: 1, hash_mb: hash * 1024, threads };
+  try {
+    for (const move of moves) {
+      if (run.cancelled || state.maiaLineRun !== run || stockfishRequestKey() !== key) break;
+      run.san = move.san;
+      run.searching = true;
+      renderMaiaLines();
+      const response = await fetch(localUrl("api/v1/engine/analyze"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...request, root_moves: [move.uci] }),
+      });
+      const result = await response.json().catch(() => ({}));
+      run.searching = false;
+      if (!response.ok) throw new Error(result.error?.message || `Engine request failed (${response.status}).`);
+      if (!result.lines?.some((line) => line.uci === move.uci))
+        throw new Error("Stockfish did not return a continuation for this move. Retry the search.");
+      rememberStockfishResult(maiaLineKey(move.uci, key), result);
+      if (stockfishRequestKey() === key) renderMaiaLines();
+    }
+  } catch (error) {
+    if (!run.cancelled && state.maiaLineRun === run) {
+      state.maiaLineError = error.message;
+      state.maiaLineErrorKey = key;
+    }
+  } finally {
+    if (state.maiaLineRun === run) {
+      state.maiaLineRun = null;
+      renderMaiaLines();
+    }
   }
 }
 function renderComparisonSummary() {
@@ -815,14 +986,14 @@ function hideMoveInspector() {
   const tooltip = $("move-inspector");
   if (tooltip) tooltip.hidden = true;
 }
-function bindMoveInspection(row, uci) {
+function bindMoveInspection(row, uci, engineLine = null) {
   row.setAttribute("aria-describedby", "move-inspector");
   const show = () => {
     if (state.workspaceTab !== "analysis") return;
     state.hoverMove = uci;
     renderMoveArrows();
     const human = state.predictions[0]?.moves.find((move) => move.uci === uci);
-    const line = state.stockfish?.lines?.find((move) => move.uci === uci);
+    const line = engineLine || maiaEngineLine(uci);
     const best = state.stockfish?.lines?.[0];
     const tooltip = $("move-inspector");
     tooltip.replaceChildren(node("strong", "inspector-move", human?.san || line?.san || uci));
@@ -1362,7 +1533,7 @@ function setMode(mode) {
   $("dual-view").hidden = state.workspaceTab !== "analysis" || view === "maia";
   $("maia-view").hidden = state.workspaceTab !== "explorer" || view !== "maia";
   $("dual-results").classList.toggle("pure-stockfish", view === "stockfish");
-  $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked || view === "stockfish");
+  setVariationVisibility();
   document.querySelector(".dual-toolbar").classList.remove("pure-stockfish");
   $("rating-control").hidden = mode === "triple" || mode === "compare" || mode === "spectrum";
   $("triple-controls").hidden = mode !== "triple";
@@ -1559,7 +1730,7 @@ $("move-limit").addEventListener("change", () => {
 });
 $("maia-move-limit").addEventListener("change", renderPredictions);
 $("show-variations").addEventListener("change", () => {
-  $("stockfish-results").classList.toggle("show-variations", $("show-variations").checked || state.mode === "stockfish");
+  setVariationVisibility();
   saveEngineSettings();
 });
 $("auto-stockfish").addEventListener("change", saveEngineSettings);
@@ -1575,6 +1746,7 @@ function updateWholeGameButton() {
   const running = Boolean(state.wholeGameController);
   button.disabled = !running && (!state.game || !state.stockfishAvailable);
   button.textContent = running ? "Cancel analysis" : "Analyze Whole Game";
+  renderMaiaLines();
 }
 function clearStockfishResult() {
   const key = state.position ? stockfishRequestKey() : null;
@@ -1660,11 +1832,20 @@ function renderStockfish(result) {
     row.dataset.uci = line.uci;
     row.style.setProperty("--move-color", comparisonColor(line.uci));
     row.append(node("span", "engine-rank", String(line.rank).padStart(2, "0")), node("strong", "", line.san || "—"), node("strong", "", line.score));
-    row.append(node("span", "engine-pv", line.pv.join(" ")));
+    row.append(node("span", "engine-pv", numberedVariation(line.pv)));
     row.setAttribute("aria-label", `${line.san}, Stockfish evaluation ${line.score} from White’s perspective`);
-    bindMoveInspection(row, line.uci);
+    row.title = "Click to expand or collapse the full continuation";
+    row.setAttribute("aria-expanded", String($("show-variations").checked || state.mode === "stockfish"));
+    row.addEventListener("click", () => {
+      const expanded = row.getAttribute("aria-expanded") !== "true";
+      row.classList.toggle("expanded", expanded);
+      row.classList.toggle("pv-collapsed", !expanded);
+      row.setAttribute("aria-expanded", String(expanded));
+    });
+    bindMoveInspection(row, line.uci, line);
     container.append(row);
   }
+  renderMaiaLines();
 }
 function stockfishRequestKey(positionPayload = payload(), settings = null) {
   const selected = settings || {
@@ -1719,12 +1900,14 @@ async function analyzeWholeGame() {
   const controller = new AbortController();
   state.wholeGameController = controller;
   state.wholeGameGame = game;
+  const cancellation = cancelMaiaLines();
   updateWholeGameButton();
   const total = game.positions.length;
   let completed = 0;
   let maiaCompleted = 0;
   let maiaError = "";
   try {
+    await cancellation;
     // The first whole-game request supersedes a one-position search. The API
     // stops the old UCI search and returns its best-so-far lines to its caller.
     for (let ply = 0; ply < total; ply += 1) {
@@ -1814,6 +1997,9 @@ async function analyzeWholeGame() {
 }
 async function analyzeStockfish() {
   if (state.wholeGameController) return;
+  const intendedKey = state.position ? stockfishRequestKey() : null;
+  await cancelMaiaLines();
+  if (state.wholeGameController || (intendedKey && intendedKey !== stockfishRequestKey())) return;
   const hashGb = Number($("stockfish-hash").value);
   const threads = Number($("stockfish-threads").value);
   if (!Number.isInteger(hashGb) || hashGb < 1 || hashGb > 64) {
@@ -1889,6 +2075,7 @@ async function analyzeStockfish() {
 }
 async function installStockfish(file) {
   if (!file) return;
+  await cancelMaiaLines();
   const engineWasAvailable = state.stockfishAvailable;
   stockfishError();
   if (file.size > MAX_ENGINE_BYTES) {
@@ -1951,6 +2138,7 @@ async function installStockfish(file) {
   }
 }
 $("stockfish-analyze").addEventListener("click", () => analyzeStockfish());
+$("maia-lines-analyze").addEventListener("click", () => analyzeMaiaLines());
 $("whole-game-analyze").addEventListener("click", analyzeWholeGame);
 $("engine-reset-defaults").addEventListener("click", () => {
   $("auto-stockfish").checked = DEFAULT_ENGINE_SETTINGS.autoAnalyze;
@@ -1959,7 +2147,7 @@ $("engine-reset-defaults").addEventListener("click", () => {
   $("stockfish-threads").value = String(DEFAULT_ENGINE_SETTINGS.threads);
   $("stockfish-depth").value = String(DEFAULT_ENGINE_SETTINGS.depth);
   $("show-variations").checked = DEFAULT_ENGINE_SETTINGS.variations;
-  $("stockfish-results").classList.toggle("show-variations", state.mode === "stockfish");
+  setVariationVisibility();
   saveEngineSettings();
   analyzeStockfish();
 });

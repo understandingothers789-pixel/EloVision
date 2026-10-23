@@ -235,6 +235,7 @@ class StockfishService:
         hash_mb: int = 8192,
         threads: int = 14,
         request_generation: int | None = None,
+        root_moves: list[str] | None = None,
     ):
         if not 10 <= depth <= 40:
             raise VisionError("stockfish_depth", "Choose a search depth between 10 and 40.", 422)
@@ -247,6 +248,22 @@ class StockfishService:
         if not 1 <= threads <= 256:
             raise VisionError("stockfish_threads", "Choose between 1 and 256 engine threads.", 422)
         board = replay_position(request.fen, request.initial_fen, list(request.moves))
+        candidates = None
+        if root_moves is not None:
+            try:
+                candidates = [chess.Move.from_uci(move) for move in root_moves]
+            except (ValueError, TypeError) as exc:
+                raise VisionError(
+                    "stockfish_root_moves", "Choose legal UCI moves for this position.", 422
+                ) from exc
+            if (
+                not 1 <= len(candidates) <= 5
+                or len(set(candidates)) != len(candidates)
+                or any(move not in board.legal_moves for move in candidates)
+            ):
+                raise VisionError(
+                    "stockfish_root_moves", "Choose one to five distinct legal UCI moves.", 422
+                )
         if not board.legal_moves.count():
             return {
                 "engine": self._identify(self._engine_path),
@@ -319,7 +336,8 @@ class StockfishService:
                     analysis = engine.analysis(
                         board,
                         chess.engine.Limit(depth=depth),
-                        multipv=min(multipv, board.legal_moves.count()),
+                        multipv=min(multipv, len(candidates or list(board.legal_moves))),
+                        **({"root_moves": candidates} if candidates is not None else {}),
                     )
                     with self._analysis_state_lock:
                         self._active_analysis = analysis

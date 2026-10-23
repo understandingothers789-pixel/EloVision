@@ -36,6 +36,7 @@ By default, `ELOVISION_DEVICE=auto` uses a GPU visible to PyTorch and otherwise 
 - Each rating column shows the top five moves with a shared all-moves option.
 - Top move arrows on the board use Elo colors; higher Elo arrows appear on top when moves overlap.
 - Optional Stockfish 19 or user-supplied Stockfish development analysis can be paired beside Maia human-move probabilities or used in an engine-only view. The board shows separate Maia probability and Stockfish evaluation gauges, with optional principal variations; see [Stockfish setup](docs/STOCKFISH.md).
+- Expand **SF lines for Maia’s top 5** to inspect each human choice’s numbered engine continuation and evaluation. Search missing choices individually or together, with cached results and cancellation on navigation. Click Stockfish rows to expand their variations.
 - A compact **Analysis** workspace pairs human and engine move tables, a computed disagreement summary, move inspection, and an interactive rating graph with labeled axes and endpoint moves. **Maia Explorer** retains the multi-rating tools and exports in its own tab.
 - Movable, resizable workspaces with **Arrange layout**, **Board focus** and **Notebook below** presets, per-page browser preferences, and a **Reset layout** button.
 - Edit player and opponent ratings independently in 100-point steps, or link equal-rated opponents.

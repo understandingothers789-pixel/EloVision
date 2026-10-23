@@ -4,6 +4,18 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 
 ## Completed checks
 
+- Maia/Stockfish continuations: **34 passed** in the complete browser/preview
+  suite; **100 passed, 1 skipped** in the non-model, non-browser suite. New
+  checks exercise legal UCI `searchmoves`, rejection of invalid/duplicate root
+  moves, searching only missing Maia choices, preserving the independent engine
+  ranking and gauge, numbered continuations for both colors, navigation cache
+  reuse, MultiPV isolation, cancellation on navigation, recoverable errors,
+  per-line expansion, SF Only graph visibility, and mobile overflow. Browser
+  policies and engine lines are explicit fixtures; UCI checks use an executable
+  protocol fixture. These do not establish real Stockfish strength or neural
+  accuracy. JavaScript syntax, Ruff lint/format checks for all Python sources,
+  and `git diff --check` pass. Existing Python formatting inconsistencies were
+  normalized to satisfy the repository's formatting check.
 - Adjustable workspaces: **31 passed** with the complete browser/standalone-preview
   suite in Chromium against the local server. Checks cover dragging the notebook
   below the board, all eight resize handles, square-board scaling, collision

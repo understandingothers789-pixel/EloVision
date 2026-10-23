@@ -301,6 +301,14 @@
                 <div id="stockfish-results" class="stockfish-results" aria-live="polite"><div class="stockfish-loading">Choose a Stockfish engine to begin.</div></div>
               </section>
             </div>
+            <details id="maia-lines-panel" class="maia-lines-panel" hidden>
+              <summary><span>SF lines for Maia’s top 5</span><small id="maia-lines-count"></small></summary>
+              <div class="maia-lines-content">
+                <p class="maia-lines-help">Expand a move to read its continuation. Evaluations are from White’s perspective.</p>
+                <div id="maia-engine-lines"></div>
+                <div class="maia-lines-actions"><button id="maia-lines-analyze" class="text-button">Analyze missing moves</button><span id="maia-lines-status" role="status"></span></div>
+              </div>
+            </details>
             <div id="comparison-summary" class="comparison-summary" aria-live="polite"><span class="comparison-label">HUMAN CHOICE · ENGINE SEARCH</span><p>Explore where human intuition and engine analysis agree.</p></div>
             </section>
             <section class="rating-chart-panel">

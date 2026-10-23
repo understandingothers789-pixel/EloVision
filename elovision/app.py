@@ -72,6 +72,7 @@ class StockfishInput(PositionInput):
     multipv: int = Field(default=5, ge=1, le=5)
     hash_mb: int = Field(default=8192, ge=1, le=65536)
     threads: int = Field(default=14, ge=1, le=256)
+    root_moves: list[str] | None = Field(default=None, min_length=1, max_length=5)
 
 
 def create_app(
@@ -255,6 +256,7 @@ def create_app(
             data.hash_mb,
             data.threads,
             generation,
+            data.root_moves,
         )
 
     @app.post("/api/v1/engine/cancel")
