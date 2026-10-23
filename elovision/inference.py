@@ -148,11 +148,11 @@ class MaiaPolicy:
 
         # Match the upstream --use-uci-history behavior: each past board tokenizes
         # from that past board's own side-to-move perspective, including black.
-        history_boards = [board.copy(stack=True)]
-        while history_boards[-1].move_stack and len(history_boards) < self.cfg.history:
-            previous = history_boards[-1].copy(stack=True)
+        previous = board.copy(stack=max(0, self.cfg.history - 1))
+        history_boards = [previous.copy(stack=False)]
+        while previous.move_stack and len(history_boards) < self.cfg.history:
             previous.pop()
-            history_boards.append(previous)
+            history_boards.append(previous.copy(stack=False))
         history = deque(
             (tokenize_board(b) for b in reversed(history_boards)), maxlen=self.cfg.history
         )
@@ -161,12 +161,15 @@ class MaiaPolicy:
         tokens = tokens.to(device)
         mask = get_legal_moves_mask(board, self.vocabulary)
         legal = list(board.legal_moves)
+        move_labels = [(move.uci(), board.san(move)) for move in legal]
+        legal_uci = {uci for uci, _san in move_labels}
         indices = [self.vocabulary[m.uci() if board.turn else mirror_move(m.uci())] for m in legal]
         if int(mask.sum()) != len(legal):
             raise VisionError("unsupported_move", "The model vocabulary missed a legal move.", 500)
         output = []
         # Small chunks bound attention memory on CPU while sharing input preparation.
         device_mask = mask.to(device)
+        device_indices = torch.tensor(indices, dtype=torch.long, device=device)
         with torch.inference_mode():
             for start in range(0, len(ratings), 4):
                 chunk = ratings[start : start + 4]
@@ -178,19 +181,22 @@ class MaiaPolicy:
                 finite = torch.isfinite(logits[:, device_mask]).all()
                 if logits.shape != (len(chunk), 4352) or not finite:
                     raise VisionError("invalid_policy", "Maia returned invalid policy logits.", 500)
-                probabilities = torch.softmax(
-                    logits.float().masked_fill(~device_mask, -torch.inf), dim=-1
-                ).cpu()
+                probabilities = (
+                    torch.softmax(logits.float().masked_fill(~device_mask, -torch.inf), dim=-1)
+                    .index_select(1, device_indices)
+                    .cpu()
+                    .tolist()
+                )
                 for row in probabilities:
                     distribution = [
                         {
-                            "uci": move.uci(),
-                            "san": board.san(move),
-                            "probability": float(row[index]),
+                            "uci": uci,
+                            "san": san,
+                            "probability": probability,
                         }
-                        for move, index in zip(legal, indices)
+                        for (uci, san), probability in zip(move_labels, row)
                     ]
-                    validate_distribution(distribution, {m.uci() for m in legal})
+                    validate_distribution(distribution, legal_uci)
                     output.append(distribution)
         return output
 

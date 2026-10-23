@@ -57,14 +57,42 @@ def test_mask_softmax_and_all_special_moves(tmp_path, fen):
     assert policy.model.calls[0][1:] == ([1000, 2400], [1000, 2400])
 
 
-def test_real_history_matches_official_preprocessing(tmp_path):
+def test_all_rating_chunks_preserve_legal_probabilities(tmp_path):
+    policy = adapter(tmp_path)
+    ratings = [(rating, rating) for rating in range(400, 3001, 200)]
+    distributions = policy.predict(chess.Board(), ratings)
+    assert len(distributions) == 14
+    assert [len(call[1]) for call in policy.model.calls] == [4, 4, 4, 2]
+    for distribution in distributions:
+        assert distribution == distributions[0]
+        indices = [policy.vocabulary[move["uci"]] for move in distribution]
+        expected = torch.softmax(torch.tensor(indices).float() / 1000, dim=0)
+        assert [move["probability"] for move in distribution] == pytest.approx(
+            expected.tolist(), abs=1e-7
+        )
+
+
+@pytest.mark.parametrize("cycles", [0, 250])
+def test_real_history_matches_official_preprocessing(tmp_path, cycles):
     policy = adapter(tmp_path)
     board = chess.Board()
     history = deque([tokenize_board(board)], maxlen=8)
-    for move in ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6", "e1g1"]:
+    moves = ["g1f3", "g8f6", "f3g1", "f6g8"] * cycles + [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6",
+        "b5a4",
+        "g8f6",
+        "e1g1",
+    ]
+    for move in moves:
         board.push_uci(move)
         history.append(tokenize_board(board))
     policy.predict(board, [(1600, 2200)])
     expected = get_historical_tokens(history, policy.cfg, 0, 0, 0, 0)
     assert torch.equal(policy.model.calls[0][0][0], expected)
     assert policy.model.calls[0][1:] == ([1600], [2200])
+    assert [move.uci() for move in board.move_stack] == moves

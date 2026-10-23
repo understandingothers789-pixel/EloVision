@@ -1634,8 +1634,14 @@ def test_maia_continuations_search_missing_moves_and_preserve_independent_sf_cac
     assert "1." in engine_line.locator(".engine-pv").text_content()
     engine_line.click()
     expect(engine_line.locator(".engine-pv")).to_be_hidden()
+    page.locator('.maia-line[data-uci="g1f3"]').evaluate(
+        "element => window.__unchangedMaiaLine = element"
+    )
     page.locator("#maia-lines-analyze").click()
     expect(page.locator("#maia-lines-count")).to_have_text("5/5 searched")
+    assert page.locator('.maia-line[data-uci="g1f3"]').evaluate(
+        "element => element === window.__unchangedMaiaLine"
+    )
     assert len(requests) == 4
     roots = [item["root_moves"][0] for item in requests if "root_moves" in item]
     assert roots == ["e2e4", "d2d4", "c2c4"]

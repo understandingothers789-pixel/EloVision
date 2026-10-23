@@ -4,6 +4,21 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 
 ## Completed checks
 
+- Performance pass: **102 passed, 1 skipped** in the non-model/non-browser
+  suite and **34 passed** in the browser/preview suite. Official-tokenizer
+  checks cover a 1,009-ply history without mutating the source board, special
+  moves, and probability parity across all 14 ratings/chunk boundaries using
+  deterministic logits. Browser checks additionally retain the same DOM node
+  for an unchanged continuation while other lines finish. History copying is
+  bounded to seven prior plies; SAN labels are prepared once per position;
+  only legal probabilities are transferred/converted; cached browser results
+  are cloned once; redundant graph drawing is removed.
+  Local microbenchmarks (five repetitions, median) measured 1,000-ply history
+  construction at **11.535 ms → 0.023 ms** per call (100 calls/repetition), and
+  unchanged continuation-panel updates at **0.164 ms → 0.012 ms** per call
+  in Chromium (300 calls/repetition, identical routed UI fixtures, before/after
+  JavaScript exposed only in the benchmark route). These measure those stages,
+  not complete model inference, GPU throughput, or actual engine search.
 - Maia/Stockfish continuations: **34 passed** in the complete browser/preview
   suite; **100 passed, 1 skipped** in the non-model, non-browser suite. New
   checks exercise legal UCI `searchmoves`, rejection of invalid/duplicate root

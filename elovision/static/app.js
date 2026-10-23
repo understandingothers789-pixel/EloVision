@@ -75,13 +75,9 @@ function readMaiaCache(data) {
   const cached = state.maiaCache.get(key);
   state.maiaCache.delete(key);
   state.maiaCache.set(key, cached);
-  return {
-    ...structuredClone(cached),
-    predictions: cached.predictions.map((prediction) => ({
-      ...structuredClone(prediction),
-      cached: true,
-    })),
-  };
+  const result = structuredClone(cached);
+  for (const prediction of result.predictions) prediction.cached = true;
+  return result;
 }
 function waitForMaia(entry, signal) {
   if (signal?.aborted) return Promise.reject(new DOMException("The request was aborted.", "AbortError"));
@@ -776,6 +772,7 @@ function renderHumanComparison(prediction) {
   $("dual-actual-card").hidden = true;
   $("comparison-more").hidden = prediction.moves.length <= 5;
   $("comparison-more").textContent = $("move-limit").value === "all" ? "Top 5 moves ⌃" : `All ${prediction.moves.length} legal moves ⌄`;
+  const topMoves = new Set(prediction.moves.slice(0, 5).map((move) => move.uci));
   for (const move of limitRows(prediction.moves, "move-limit")) {
     const row = node("button", "move-prediction comparison-move");
     row.type = "button";
@@ -786,7 +783,7 @@ function renderHumanComparison(prediction) {
       row.classList.add("is-played");
       row.setAttribute("aria-label", `${move.san}, played in game, ${pct(move.probability)}`);
     }
-    if (prediction.moves.slice(0, 5).some((candidate) => candidate.uci === move.uci)) {
+    if (topMoves.has(move.uci)) {
       row.title = "Click to inspect this move’s Stockfish continuation";
       row.setAttribute("aria-controls", "maia-lines-panel");
       row.addEventListener("click", () => {
@@ -832,9 +829,9 @@ function maiaLineKey(uci, key = stockfishRequestKey()) {
   // Restricted searches never replace the independent MultiPV result.
   return `${key}|root:${uci}|multipv:1`;
 }
-function maiaEngineLine(uci) {
-  return state.stockfishCache.get(maiaLineKey(uci))?.lines?.find((line) => line.uci === uci)
-    || (state.stockfishPositionKey === stockfishRequestKey()
+function maiaEngineLine(uci, key = stockfishRequestKey()) {
+  return state.stockfishCache.get(maiaLineKey(uci, key))?.lines?.find((line) => line.uci === uci)
+    || (state.stockfishPositionKey === key
       ? state.stockfish?.lines?.find((line) => line.uci === uci) : null);
 }
 function renderMaiaLines() {
@@ -843,18 +840,30 @@ function renderMaiaLines() {
   panel.hidden = state.mode !== "dual" || !moves.length;
   if (panel.hidden) return;
   const key = stockfishRequestKey();
+  const container = $("maia-engine-lines");
   if (state.maiaLinePositionKey !== key) {
+    container.replaceChildren();
     state.maiaLineExpanded.clear();
     if (state.maiaLineErrorKey !== key) state.maiaLineError = "";
     state.maiaLinePositionKey = key;
   }
-  const container = $("maia-engine-lines");
-  container.replaceChildren();
+  const existing = new Map([...container.children].map((detail) => [detail.dataset.uci, detail]));
+  const canSearch = state.stockfishAvailable && !state.wholeGameController;
   let searched = 0;
-  for (const move of moves) {
-    const line = maiaEngineLine(move.uci);
+  for (const [index, move] of moves.entries()) {
+    const line = maiaEngineLine(move.uci, key);
     if (line) searched += 1;
-    const detail = node("details", "maia-line");
+    const signature = JSON.stringify([move.san, move.probability, line?.score, line?.depth, line?.pv, Boolean(canSearch)]);
+    let detail = existing.get(move.uci);
+    existing.delete(move.uci);
+    if (detail?.renderSignature === signature) {
+      detail.open = state.maiaLineExpanded.has(move.uci);
+      if (container.children[index] !== detail) container.insertBefore(detail, container.children[index] || null);
+      continue;
+    }
+    const previous = detail;
+    detail = node("details", "maia-line");
+    detail.renderSignature = signature;
     detail.dataset.uci = move.uci;
     detail.open = state.maiaLineExpanded.has(move.uci);
     const summary = node("summary");
@@ -865,7 +874,7 @@ function renderMaiaLines() {
     else {
       const search = node("button", "text-button", "Search this move with SF");
       search.type = "button";
-      search.disabled = !state.stockfishAvailable || Boolean(state.wholeGameController);
+      search.disabled = !canSearch;
       search.addEventListener("click", () => analyzeMaiaLines([move.uci]));
       detail.append(search);
     }
@@ -874,8 +883,10 @@ function renderMaiaLines() {
       if (detail.open) state.maiaLineExpanded.add(move.uci);
       else state.maiaLineExpanded.delete(move.uci);
     });
-    container.append(detail);
+    if (previous) previous.replaceWith(detail);
+    if (container.children[index] !== detail) container.insertBefore(detail, container.children[index] || null);
   }
+  for (const detail of existing.values()) detail.remove();
   $("maia-lines-count").textContent = `${searched}/${moves.length} searched`;
   const running = state.maiaLineRun;
   const button = $("maia-lines-analyze");
@@ -1870,7 +1881,6 @@ function showStockfishResult(result, key, remember = true, refreshHuman = true) 
   renderStockfish(result);
   if (refreshHuman && state.mode === "dual") {
     renderPredictions();
-    renderRatingComparisonChart();
   }
   renderGauges();
   renderMoveArrows();
