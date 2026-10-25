@@ -384,9 +384,19 @@ class StockfishService:
                 score_text = "—"
             line_board = board.copy(stack=True)
             pv_san = []
+            pv_positions = []
+
+            def snapshot():
+                return {
+                    chess.square_name(square): piece.symbol()
+                    for square, piece in line_board.piece_map().items()
+                }
+
+            pv_positions.append(snapshot())
             for move in pv:
                 pv_san.append(line_board.san(move))
                 line_board.push(move)
+                pv_positions.append(snapshot())
             lines.append(
                 {
                     "rank": rank,
@@ -396,6 +406,7 @@ class StockfishService:
                     "mate": mate,
                     "score": score_text,
                     "pv": pv_san,
+                    "pv_positions": pv_positions,
                     "depth": info.get("depth", depth),
                 }
             )

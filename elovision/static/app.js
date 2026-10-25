@@ -998,6 +998,7 @@ function hideMoveInspector() {
   if (tooltip) tooltip.hidden = true;
 }
 function bindMoveInspection(row, uci, engineLine = null) {
+  let variationPly = 1;
   row.setAttribute("aria-describedby", "move-inspector");
   const show = () => {
     if (state.workspaceTab !== "analysis") return;
@@ -1023,6 +1024,29 @@ function bindMoveInspection(row, uci, engineLine = null) {
       detail.append(node("span", "engine-text", "Loss vs. best"), node("strong", "", `${(loss / 100).toFixed(2)} pawns`));
       tooltip.append(detail);
     }
+    if (line?.pv_positions?.length) {
+      variationPly = Math.max(0, Math.min(variationPly, line.pv_positions.length - 1));
+      const board = node("div", "variation-mini-board");
+      board.setAttribute("role", "img");
+      board.setAttribute("aria-label", `Variation board after ${variationPly} plies`);
+      const pieces = line.pv_positions[variationPly];
+      for (let index = 0; index < 64; index++) {
+        const file = state.flipped ? 7 - index % 8 : index % 8;
+        const rank = state.flipped ? Math.floor(index / 8) : 7 - Math.floor(index / 8);
+        const square = String.fromCharCode(97 + file) + (rank + 1);
+        const cell = node("div", `mini-square${(file + rank) % 2 ? " light" : " dark"}`);
+        cell.dataset.square = square;
+        if (pieces[square]) {
+          const piece = pieces[square];
+          const img = node("img");
+          img.src = localUrl(`pieces/${piece === piece.toUpperCase() ? "w" : "b"}${piece.toUpperCase()}.svg`);
+          img.alt = `${piece} on ${square}`;
+          cell.append(img);
+        }
+        board.append(cell);
+      }
+      tooltip.append(board, node("div", "variation-mini-caption", `${variationPly}/${line.pv.length} · ${variationPly ? line.pv[variationPly - 1] : "Start position"}`), node("div", "variation-mini-help", "Scroll down: forward · Scroll up: back"));
+    }
     tooltip.hidden = false;
     const rect = row.getBoundingClientRect();
     const width = tooltip.offsetWidth;
@@ -1034,6 +1058,14 @@ function bindMoveInspection(row, uci, engineLine = null) {
   row.addEventListener("focus", show);
   row.addEventListener("pointerleave", hide);
   row.addEventListener("blur", hide);
+  row.addEventListener("wheel", (event) => {
+    const line = engineLine || maiaEngineLine(uci);
+    if (!line?.pv_positions?.length || !event.deltaY) return;
+    event.preventDefault();
+    event.stopPropagation();
+    variationPly = Math.max(0, Math.min(line.pv.length, variationPly + Math.sign(event.deltaY)));
+    show();
+  }, { passive: false });
 }
 function renderTriple(container, predictions) {
   const grid = node("div", "triple-results");

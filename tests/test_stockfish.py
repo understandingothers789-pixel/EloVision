@@ -93,6 +93,11 @@ def test_stockfish_upload_and_multipv_api(tmp_path, monkeypatch):
             "Be7",
             "Re1",
         ]
+        positions = result["lines"][0]["pv_positions"]
+        assert len(positions) == len(result["lines"][0]["pv"]) + 1
+        assert positions[0]["e2"] == "P"
+        assert positions[1]["e4"] == "P"
+        assert "e2" not in positions[1]
         assert result["channel"] == "official19"
         configured = uci_log.read_text(encoding="utf-8")
         assert "setoption name Threads value 14" in configured

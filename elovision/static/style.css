@@ -2350,3 +2350,11 @@ body.board-focus-layout .workspace .board-insight { margin-top: 6px; }
   .layout-actions select { max-width: 130px; font-size: 10px; }
   .layout-actions .button { font-size: 10px; padding: 5px 8px; }
 }
+
+.variation-mini-board { display: grid; grid-template-columns: repeat(8, 1fr); width: 100%; aspect-ratio: 1; margin-top: 9px; }
+.mini-square { display: flex; align-items: center; justify-content: center; aspect-ratio: 1; }
+.mini-square.light { background: #efdbb3; }
+.mini-square.dark { background: #b7a78a; }
+.mini-square img { width: 100%; height: 100%; }
+.variation-mini-caption { margin-top: 6px; color: #d7c8d1; text-align: center; font-size: 11px; }
+.variation-mini-help { margin-top: 4px; font-size: 9px; color: #ad9eaa; text-align: center; }
