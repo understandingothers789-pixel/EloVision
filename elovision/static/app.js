@@ -762,9 +762,8 @@ function comparisonMoves() {
   }
   return moves;
 }
-function comparisonColor(uci) {
-  const index = comparisonMoves().findIndex((move) => move.uci === uci);
-  return index < 0 ? "#b4bbc4" : MOVE_COLORS[index];
+function comparisonColors() {
+  return new Map(comparisonMoves().map((move, index) => [move.uci, MOVE_COLORS[index]]));
 }
 function renderHumanComparison(prediction) {
   const container = $("dual-human-moves");
@@ -772,12 +771,13 @@ function renderHumanComparison(prediction) {
   $("dual-actual-card").hidden = true;
   $("comparison-more").hidden = prediction.moves.length <= 5;
   $("comparison-more").textContent = $("move-limit").value === "all" ? "Top 5 moves ⌃" : `All ${prediction.moves.length} legal moves ⌄`;
+  const colors = comparisonColors();
   const topMoves = new Set(prediction.moves.slice(0, 5).map((move) => move.uci));
   for (const move of limitRows(prediction.moves, "move-limit")) {
     const row = node("button", "move-prediction comparison-move");
     row.type = "button";
     row.dataset.uci = move.uci;
-    row.style.setProperty("--move-color", comparisonColor(move.uci));
+    row.style.setProperty("--move-color", (colors.get(move.uci) || "#b4bbc4"));
     row.append(node("span", "prediction-san", move.san), node("span", "prediction-percent", `${(move.probability * 100).toFixed(1)}%`));
     if (move.uci === state.position?.actual_move) {
       row.classList.add("is-played");
@@ -1432,9 +1432,18 @@ async function loadRatingComparisonChart(revision) {
   }
 }
 function renderRatingComparisonChart() {
-  const predictions = [...state.ratingPredictions].sort((a, b) => a.player_elo - b.player_elo);
-  if (!predictions?.length) return;
+  if (!state.ratingPredictions.length) return;
+  const container = $("rating-comparison-chart");
   const moves = comparisonMoves();
+  const signature = JSON.stringify([
+    state.position?.fen, moves.map((move) => [move.uci, move.san]),
+    [...state.hiddenChartMoves].sort(), $("dual-equal").checked, $("dual-opponent-elo").value,
+    Boolean(state.stockfish?.lines?.length),
+  ]);
+  const rendered = container.chartRender;
+  if (rendered?.predictions === state.ratingPredictions && rendered.signature === signature
+      && rendered.svg.parentNode === container) return;
+  const predictions = [...state.ratingPredictions].sort((a, b) => a.player_elo - b.player_elo);
   if (!moves.length) {
     $("rating-comparison-chart").replaceChildren(node("p", "chart-empty", "No legal moves to compare in this position."));
     return;
@@ -1446,7 +1455,6 @@ function renderRatingComparisonChart() {
     if (text !== undefined) el.textContent = text;
     return el;
   };
-  const container = $("rating-comparison-chart");
   container.replaceChildren();
   const legend = node("div", "rating-chart-legend-controls");
   const svg = make("svg", { viewBox: "0 0 420 258", role: "group", "aria-label": "Maia move probabilities by Lichess blitz rating" });
@@ -1552,6 +1560,7 @@ function renderRatingComparisonChart() {
   });
   svg.addEventListener("pointerleave", () => { tooltip.hidden = true; crosshair.setAttribute("visibility", "hidden"); });
   container.append(legend, svg, tooltip);
+  container.chartRender = { predictions: state.ratingPredictions, signature, svg };
   const chartSubject = state.stockfish?.lines?.length ? "Top human choices + engine favorite" : "Top human choices";
   $("rating-chart-context").textContent = $("dual-equal").checked
     ? `${chartSubject} · equal-rated opponents`
@@ -1869,11 +1878,12 @@ function renderStockfish(result) {
     container.append(node("div", "stockfish-loading", "This position has no legal moves."));
     return;
   }
+  const colors = comparisonColors();
   for (const line of result.lines) {
     const row = node("button", `stockfish-line${line.rank === 1 ? " best" : ""}`);
     row.type = "button";
     row.dataset.uci = line.uci;
-    row.style.setProperty("--move-color", comparisonColor(line.uci));
+    row.style.setProperty("--move-color", (colors.get(line.uci) || "#b4bbc4"));
     row.append(node("span", "engine-rank", String(line.rank).padStart(2, "0")), node("strong", "", line.san || "—"), node("strong", "", line.score));
     row.append(node("span", "engine-pv", numberedVariation(line.pv)));
     row.setAttribute("aria-label", `${line.san}, Stockfish evaluation ${line.score} from White’s perspective`);

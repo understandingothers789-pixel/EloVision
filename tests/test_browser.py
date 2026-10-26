@@ -1733,3 +1733,31 @@ def test_maia_continuation_error_stays_in_its_panel_and_can_be_retried(page):
     expect(page.locator("#stockfish-results .stockfish-line").first).to_be_visible()
     expect(page.locator(".rating-chart-panel")).to_be_visible()
     expect(page.locator("#maia-lines-analyze")).to_be_enabled()
+
+
+def test_unchanged_rating_chart_preserves_focused_point_and_updates_on_legend_change(page):
+    from pathlib import Path
+
+    route_maia_continuation_fixtures(page)
+    source = Path("elovision/static/app.js").read_text()
+    page.route(
+        "**/app.js",
+        lambda route: route.fulfill(
+            body=source + "\nglobalThis.__refreshChart = renderRatingComparisonChart;",
+            content_type="text/javascript",
+        ),
+    )
+    page.goto(BASE_URL)
+    page.locator(".rating-chart-dot").first.wait_for()
+    page.locator(".rating-chart-dot").first.focus()
+    assert page.evaluate("""() => {
+        const focused = document.activeElement;
+        const svg = document.querySelector('#rating-comparison-chart svg');
+        for (let i = 0; i < 50; i++) window.__refreshChart();
+        return document.activeElement === focused && focused.isConnected &&
+            document.querySelector('#rating-comparison-chart svg') === svg;
+    }""")
+    page.locator(".chart-legend-button").first.click()
+    expect(page.locator(".rating-chart-line")).to_have_count(4)
+    page.locator(".chart-legend-button").first.click()
+    expect(page.locator(".rating-chart-line")).to_have_count(5)

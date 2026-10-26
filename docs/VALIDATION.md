@@ -4,6 +4,14 @@ Current development environment: Linux x86-64, Python 3.12.14, CPU PyTorch 2.8.0
 
 ## Completed checks
 
+- Rating-chart rendering pass: **35 browser/preview checks passed**. Unchanged
+  charts reuse their SVG and focused
+  points; legend changes and new prediction inputs still rebuild the chart.
+  Move colors are computed once per rendered list. A Chromium microbenchmark
+  with identical routed prediction fixtures (five rounds of 50 calls) measured
+  median unchanged chart updates at **0.428 ms → 0.004 ms** per call. This
+  measures rendering work only, not model inference or Stockfish search.
+
 - Performance pass: **102 passed, 1 skipped** in the non-model/non-browser
   suite and **34 passed** in the browser/preview suite. Official-tokenizer
   checks cover a 1,009-ply history without mutating the source board, special
